@@ -3,8 +3,8 @@
   "step": 1,
   "topic": "install-policy-commands-pr-review",
   "branch": "claude/reapply-baseline-pr-011CUhCgFMAyJ8dgrZZHzByx",
-  "pr_url": "https://github.com/martinmo90/agent-ops-hub/pull/TBD",
-  "pr_number": null,
+  "pr_url": "https://github.com/martinmo90/agent-ops-hub/pull/4",
+  "pr_number": 4,
   "confidence": 0.95,
   "self_check": {
     "tests_all_pass": true,
@@ -22,7 +22,6 @@
     {"path": "PROJECT_CHARTER.md", "sha256": "cd367e5f48a8eff7c8c7999c680c33049d3ba6d7297ee80959fbb34717642586"},
     {"path": "AGENT_RESPONSE_POLICY.md", "sha256": "5045bfb03f6acfbdf90b15211225b249933f833db881aa41745574977fdd5f41"},
     {"path": ".github/pull_request_template.md", "sha256": "d42046dc86f3b10eb90acfb1b56e992e840a692af68909461ce26a3554e814ee"},
-    {"path": ".github/workflows/claude_pr_review.yml", "sha256": "ee965445708bb322c64246a80d96972060a3f5e6b0b9ca2f7e4b9fc0c738fd54"},
     {"path": ".claude/commands/pr-review.md", "sha256": "fd8c469cab02bc777a894f19e028f542e0ba2a59b868f7b395853ff57f81c043"},
     {"path": ".claude/commands/testing_plan_integration.md", "sha256": "52660d88546cb61429c1e3d567e8059cf8d11c0d883f0ffe124e85ffe090f22b"},
     {"path": ".claude/commands/update-docs.md", "sha256": "28fc490a8605ff56f93c643950bd2d46dfa67164400200c2188e088e34c288eb"},
