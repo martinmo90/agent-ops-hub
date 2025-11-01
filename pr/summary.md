@@ -1,10 +1,12 @@
 # PR Summary
 
-**Title:** chore: install agent-ops baseline (policy, commands, PR review)
+**Title:** chore: reapply agent-ops baseline
 
-**Branch:** `claude/agent-ops-hub-011CUgSK93TbcKesMozwxetk`
+**Branch:** `reapply/baseline`
 
-**PR URL:** _Pending manual creation (gh CLI not available)_
+**Base Branch:** `main`
+
+**PR URL:** To be created
 
 ## Files Added
 
@@ -21,7 +23,16 @@
 - `manifest.json` — Task metadata and deliverable manifest
 - `agentops_step01_baseline_20251101-0320.zip` — Deliverable archive
 
+## Summary
+
+This PR reapplies the agent-ops baseline configuration from commit `dfeed2c`, restoring:
+- Governance documents (PROJECT_CHARTER.md, AGENT_RESPONSE_POLICY.md)
+- Claude commands for PR review, testing, and documentation
+- GitHub workflow for automated PR review
+- Baseline artifacts and manifest
+
 ## How to Review
 
 - Verify all governance documents (PROJECT_CHARTER.md, AGENT_RESPONSE_POLICY.md) define clear objectives, gates, and evidence requirements
 - Confirm .claude/commands/ and .claude/agents/ provide reusable workflows for PR review, testing, docs, and context management
+- Check that all baseline files from the original commit are present and correct

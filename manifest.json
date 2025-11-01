@@ -2,8 +2,9 @@
   "job_id": "agent-ops-baseline",
   "step": 1,
   "topic": "install-policy-commands-pr-review",
-  "branch": "chore/agent-ops-baseline",
-  "pr_url": null,
+  "branch": "reapply/baseline",
+  "pr_url": "https://github.com/martinmo90/agent-ops-hub/pull/TBD",
+  "pr_number": null,
   "confidence": 0.95,
   "self_check": {
     "tests_all_pass": true,
