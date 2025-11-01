@@ -2,7 +2,7 @@
   "job_id": "agent-ops-baseline",
   "step": 1,
   "topic": "install-policy-commands-pr-review",
-  "branch": "reapply/baseline",
+  "branch": "claude/reapply-baseline-pr-011CUhCgFMAyJ8dgrZZHzByx",
   "pr_url": "https://github.com/martinmo90/agent-ops-hub/pull/TBD",
   "pr_number": null,
   "confidence": 0.95,
