@@ -1,5 +1,0 @@
-{
-  "pr_url": null,
-  "run_status": "pending_pr_creation",
-  "notes": "PR creation blocked: gh CLI not available in environment; requires manual creation via GitHub UI or external gh CLI"
-}
