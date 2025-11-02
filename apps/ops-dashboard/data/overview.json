@@ -1,0 +1,57 @@
+{
+  "kpis": {
+    "activeTasks": 12,
+    "blocked": 2,
+    "mergesToday": 3,
+    "lastRun": "2 hours ago"
+  },
+  "projectStatus": {
+    "title": "Agent Ops Hub",
+    "status": "operational",
+    "lastDeployment": "2025-11-02T08:35:00Z"
+  },
+  "recommendedActions": [
+    {
+      "id": "ra-1",
+      "title": "Review blocked PR #42",
+      "description": "Needs approval from 2 reviewers",
+      "priority": "high",
+      "category": "review"
+    },
+    {
+      "id": "ra-2",
+      "title": "Update baseline documentation",
+      "description": "Charter changes pending sync",
+      "priority": "medium",
+      "category": "docs"
+    },
+    {
+      "id": "ra-3",
+      "title": "Run integration tests",
+      "description": "Last run: 4 days ago",
+      "priority": "medium",
+      "category": "test"
+    },
+    {
+      "id": "ra-4",
+      "title": "Merge dependency updates",
+      "description": "12 security patches available",
+      "priority": "high",
+      "category": "security"
+    },
+    {
+      "id": "ra-5",
+      "title": "Archive old branches",
+      "description": "23 stale feature branches",
+      "priority": "low",
+      "category": "cleanup"
+    },
+    {
+      "id": "ra-6",
+      "title": "Review API usage limits",
+      "description": "Approaching Claude API quota",
+      "priority": "medium",
+      "category": "monitoring"
+    }
+  ]
+}

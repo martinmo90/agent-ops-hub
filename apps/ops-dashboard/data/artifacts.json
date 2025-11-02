@@ -1,0 +1,20 @@
+[
+  {
+    "name": "source.zip",
+    "size": "2.4 MB",
+    "createdAt": "2025-11-02T10:35:00Z",
+    "type": "source"
+  },
+  {
+    "name": "build.zip",
+    "size": "8.1 MB",
+    "createdAt": "2025-11-02T10:37:00Z",
+    "type": "build"
+  },
+  {
+    "name": "summary.json",
+    "size": "1.2 KB",
+    "createdAt": "2025-11-02T10:38:00Z",
+    "type": "metadata"
+  }
+]
