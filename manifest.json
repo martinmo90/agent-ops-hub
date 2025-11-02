@@ -38,5 +38,11 @@
     "iterations": 1
   },
   "next_step_suggested": "Baseline merged to main via PR #5",
-  "wait_reason": null
+  "wait_reason": null,
+  "local_chatops": {
+    "path": "local-chatops",
+    "start": "npm start",
+    "port": 3000,
+    "env": ["ANTHROPIC_API_KEY", "GITHUB_PAT", "GITHUB_OWNER", "GITHUB_REPO"]
+  }
 }
