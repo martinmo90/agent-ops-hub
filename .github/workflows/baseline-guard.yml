@@ -1,0 +1,50 @@
+name: Baseline Guard
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify baseline files exist
+        run: |
+          set -euo pipefail
+          REQ=(
+            "PROJECT_CHARTER.md"
+            "AGENT_RESPONSE_POLICY.md"
+            ".github/pull_request_template.md"
+            ".claude/commands/pr-review.md"
+            ".claude/commands/testing_plan_integration.md"
+            ".claude/commands/update-docs.md"
+            ".claude/agents/context-manager.md"
+            "artifacts/checks/budget_plan.json"
+            "artifacts/checks/context_report.json"
+            "manifest.json"
+            "pr/summary.md"
+          )
+          miss=0
+          for f in "${REQ[@]}"; do [[ -f "$f" ]] || { echo "::error::Missing $f"; miss=1; }; done
+          exit $miss
+  cleanup:
+    if: ${{ github.event.pull_request.merged == true }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Auto-delete head branch (if allowed)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          PR="${{ github.event.pull_request.number }}"
+          HEAD="${{ github.event.pull_request.head.ref }}"
+          echo "PR #$PR merged; attempting to delete branch $HEAD"
+          gh api -X DELETE repos/${{ github.repository }}/git/refs/heads/${HEAD} || echo "Skip: cannot delete"
