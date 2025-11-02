@@ -5,6 +5,9 @@
   "branch": "claude/reapply-baseline-pr-011CUhCgFMAyJ8dgrZZHzByx",
   "pr_url": "https://github.com/martinmo90/agent-ops-hub/pull/4",
   "pr_number": 4,
+  "pr_to_main_url": "https://github.com/martinmo90/agent-ops-hub/pull/5",
+  "pr_to_main_number": 5,
+  "merge_commit": "ca524f6e154a542a12b22bfc66cc8b75b5f38e4b",
   "confidence": 0.95,
   "self_check": {
     "tests_all_pass": true,
@@ -34,6 +37,6 @@
     "minutes_used": 5,
     "iterations": 1
   },
-  "next_step_suggested": "Create PR for agent-ops-baseline branch",
+  "next_step_suggested": "Baseline merged to main via PR #5",
   "wait_reason": null
 }
