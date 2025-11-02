@@ -1,0 +1,42 @@
+[
+  {
+    "id": "run-1",
+    "startedAt": "2025-11-02T10:35:00Z",
+    "status": "success",
+    "duration": 145,
+    "summary": "Baseline Guard verification passed",
+    "logs": "✓ PROJECT_CHARTER.md\n✓ AGENT_RESPONSE_POLICY.md\n✓ All baseline files present\n✓ Manifest valid\nResult: PASS"
+  },
+  {
+    "id": "run-2",
+    "startedAt": "2025-11-02T08:20:00Z",
+    "status": "success",
+    "duration": 320,
+    "summary": "PR #9 auto-merged successfully",
+    "logs": "→ Checking PR #9\n✅ Token OK\n✅ Check passed: verify\n🟨 Attempting squash merge\n✅ Merged PR #9\nDone."
+  },
+  {
+    "id": "run-3",
+    "startedAt": "2025-11-01T16:45:00Z",
+    "status": "failed",
+    "duration": 89,
+    "summary": "Build failed - missing dependency",
+    "logs": "npm ERR! Could not resolve dependency\nnpm ERR! peer @types/react@\"^18.0.0\" from react-dom@18.3.1\nError: Build process exited with code 1"
+  },
+  {
+    "id": "run-4",
+    "startedAt": "2025-11-01T14:30:00Z",
+    "status": "success",
+    "duration": 267,
+    "summary": "Tests passed (12/12)",
+    "logs": "Running 12 tests...\n✓ auth.test.ts\n✓ api.test.ts\n✓ dashboard.test.ts\nAll tests passed!"
+  },
+  {
+    "id": "run-5",
+    "startedAt": "2025-11-01T12:00:00Z",
+    "status": "cancelled",
+    "duration": 45,
+    "summary": "Deployment cancelled by user",
+    "logs": "Deploying to staging...\nℹ️ Deployment cancelled\nRollback complete."
+  }
+]

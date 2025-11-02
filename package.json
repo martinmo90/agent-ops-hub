@@ -5,7 +5,12 @@
     "shadcn:install": "cd apps/shadcn-chatbot-kit && pnpm install",
     "shadcn:dev": "cd apps/shadcn-chatbot-kit/apps/www && pnpm dev",
     "shadcn:test:hi": "playwright test tests/shadcn-hi.spec.ts --reporter=list",
-    "shadcn:anthropic:patch": "cp config/shadcn-templates/route.anthropic.ts apps/shadcn-chatbot-kit/apps/www/app/api/chat/route.ts"
+    "shadcn:anthropic:patch": "cp config/shadcn-templates/route.anthropic.ts apps/shadcn-chatbot-kit/apps/www/app/api/chat/route.ts",
+    "ops:install": "cd apps/ops-dashboard && npm install",
+    "ops:dev": "cd apps/ops-dashboard && npm run dev",
+    "ops:build": "cd apps/ops-dashboard && npm run build",
+    "ops:start": "cd apps/ops-dashboard && npm run start",
+    "ops:test": "playwright test tests/ops-dashboard-smoke.spec.ts --reporter=list"
   },
   "devDependencies": {
     "@playwright/test": "^1.48.2"
