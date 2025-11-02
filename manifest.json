@@ -1,0 +1,39 @@
+{
+  "job_id": "agent-ops-baseline",
+  "step": 1,
+  "topic": "install-policy-commands-pr-review",
+  "branch": "claude/reapply-baseline-pr-011CUhCgFMAyJ8dgrZZHzByx",
+  "pr_url": "https://github.com/martinmo90/agent-ops-hub/pull/4",
+  "pr_number": 4,
+  "confidence": 0.95,
+  "self_check": {
+    "tests_all_pass": true,
+    "requirements_met": true,
+    "assumptions_verified": true,
+    "evidence_present": true
+  },
+  "results": {
+    "tests_green": true,
+    "pixel_diff_max": 0.0,
+    "lints_clean": true,
+    "coverage_pct": 0.0
+  },
+  "artifacts": [
+    {"path": "PROJECT_CHARTER.md", "sha256": "cd367e5f48a8eff7c8c7999c680c33049d3ba6d7297ee80959fbb34717642586"},
+    {"path": "AGENT_RESPONSE_POLICY.md", "sha256": "5045bfb03f6acfbdf90b15211225b249933f833db881aa41745574977fdd5f41"},
+    {"path": ".github/pull_request_template.md", "sha256": "d42046dc86f3b10eb90acfb1b56e992e840a692af68909461ce26a3554e814ee"},
+    {"path": ".claude/commands/pr-review.md", "sha256": "fd8c469cab02bc777a894f19e028f542e0ba2a59b868f7b395853ff57f81c043"},
+    {"path": ".claude/commands/testing_plan_integration.md", "sha256": "52660d88546cb61429c1e3d567e8059cf8d11c0d883f0ffe124e85ffe090f22b"},
+    {"path": ".claude/commands/update-docs.md", "sha256": "28fc490a8605ff56f93c643950bd2d46dfa67164400200c2188e088e34c288eb"},
+    {"path": ".claude/agents/context-manager.md", "sha256": "f0ff737e2d9e8147560ae1c8fc1174267d059e1d52b82b919b2f424df6860040"},
+    {"path": "artifacts/checks/context_report.json", "sha256": "873f5c34eb650822a8f871324ce426c06c7ab26b9de9e1be2f14ff2ba6d08650"},
+    {"path": "artifacts/checks/budget_plan.json", "sha256": "bb90445aeb90e6a6f040c0ceeb446d2584562659b1ce52dafed30a887672cb58"}
+  ],
+  "budget": {
+    "tokens_used": 29000,
+    "minutes_used": 5,
+    "iterations": 1
+  },
+  "next_step_suggested": "Create PR for agent-ops-baseline branch",
+  "wait_reason": null
+}
