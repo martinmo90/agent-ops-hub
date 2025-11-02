@@ -1,0 +1,12 @@
+{
+  "name": "agent-ops-hub",
+  "private": true,
+  "scripts": {
+    "shadcn:install": "cd apps/shadcn-chatbot-kit && pnpm install",
+    "shadcn:dev": "cd apps/shadcn-chatbot-kit/apps/www && pnpm dev",
+    "shadcn:test:hi": "playwright test tests/shadcn-hi.spec.ts --reporter=list"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.2"
+  }
+}
