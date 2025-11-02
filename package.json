@@ -4,7 +4,8 @@
   "scripts": {
     "shadcn:install": "cd apps/shadcn-chatbot-kit && pnpm install",
     "shadcn:dev": "cd apps/shadcn-chatbot-kit/apps/www && pnpm dev",
-    "shadcn:test:hi": "playwright test tests/shadcn-hi.spec.ts --reporter=list"
+    "shadcn:test:hi": "playwright test tests/shadcn-hi.spec.ts --reporter=list",
+    "shadcn:anthropic:patch": "cp config/shadcn-templates/route.anthropic.ts apps/shadcn-chatbot-kit/apps/www/app/api/chat/route.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.48.2"
