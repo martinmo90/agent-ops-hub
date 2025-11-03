@@ -23,29 +23,31 @@
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
     --ring: 174 72% 45%;
-    --radius: 0.5rem;
+    --radius: 0.375rem;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 6%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 6%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 174 72% 45%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 174 72% 45%;
+    /* Trading terminal dark theme - almost black with slate cards */
+    --background: 222 47% 3%;
+    --foreground: 180 100% 90%;
+    --card: 222 47% 5%;
+    --card-foreground: 180 100% 90%;
+    --popover: 222 47% 4%;
+    --popover-foreground: 180 100% 90%;
+    --primary: 174 80% 50%;
+    --primary-foreground: 222 47% 3%;
+    --secondary: 217 33% 12%;
+    --secondary-foreground: 180 100% 90%;
+    --muted: 217 33% 12%;
+    --muted-foreground: 215 20% 50%;
+    --accent: 174 60% 20%;
+    --accent-foreground: 174 80% 70%;
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 180 100% 90%;
+    --border: 217 33% 12%;
+    --input: 217 33% 12%;
+    --ring: 174 80% 50%;
+    --radius: 0.375rem;
   }
 }
 
@@ -55,5 +57,24 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Compact, terminal-style density */
+  h1, h2, h3, h4, h5, h6 {
+    @apply tracking-tight;
+  }
+
+  /* Tighter spacing for cards */
+  .space-y-6 > * + * {
+    margin-top: 1rem;
+  }
+
+  .space-y-4 > * + * {
+    margin-top: 0.75rem;
+  }
+
+  .space-y-3 > * + * {
+    margin-top: 0.5rem;
   }
 }

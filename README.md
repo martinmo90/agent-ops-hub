@@ -75,6 +75,21 @@ cd apps/ops-dashboard
 ./package.ps1
 ```
 
+### Download Pre-built Artifact
+
+Instead of building locally, you can download the latest pre-built dashboard from GitHub Actions:
+
+1. Go to the [Actions tab](https://github.com/martinmo90/agent-ops-hub/actions/workflows/ops-build-zip.yml)
+2. Click on the latest successful workflow run
+3. Download the `ops-dashboard-build` artifact (contains `ops-dashboard.zip`)
+4. Extract the ZIP and run:
+   ```bash
+   npm install
+   npm start
+   ```
+
+The artifact includes the built `.next` directory and is ready to deploy.
+
 ### Testing
 
 ```bash
@@ -85,6 +100,8 @@ npm run ops:test
 ### Current Status
 
 The Ops Dashboard is currently a **UI shell with mock data**. All data is loaded from JSON files in `apps/ops-dashboard/data/`. No backend integration is implemented yet.
+
+**Theme**: v1.1 features a darker "trading terminal" aesthetic with teal/green accents, compact density, and an Executive Summary panel on the Overview page.
 
 ## shadcn-chatbot-kit
 

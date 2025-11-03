@@ -1,0 +1,69 @@
+name: Ops Dashboard Build & Artifact
+
+on:
+  pull_request:
+    paths:
+      - 'apps/ops-dashboard/**'
+      - '.github/workflows/ops-build-zip.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/ops-dashboard/**'
+      - '.github/workflows/ops-build-zip.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install root dependencies
+        run: npm install
+
+      - name: Install dashboard dependencies
+        working-directory: apps/ops-dashboard
+        run: npm install
+
+      - name: Build dashboard
+        working-directory: apps/ops-dashboard
+        run: npm run build
+
+      - name: Create artifact ZIP
+        working-directory: apps/ops-dashboard
+        run: |
+          # Create a clean directory for the artifact
+          mkdir -p ../../dist
+          # Zip the .next build output
+          zip -r ../../dist/ops-dashboard.zip .next package.json package-lock.json
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ops-dashboard-build
+          path: dist/ops-dashboard.zip
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Build summary
+        run: |
+          echo "## 📦 Ops Dashboard Build" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Build completed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifact Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **Name**: ops-dashboard-build" >> $GITHUB_STEP_SUMMARY
+          echo "- **File**: ops-dashboard.zip" >> $GITHUB_STEP_SUMMARY
+          echo "- **Retention**: 90 days" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Download the artifact from the workflow run to deploy the dashboard." >> $GITHUB_STEP_SUMMARY
