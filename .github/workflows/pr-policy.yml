@@ -1,0 +1,50 @@
+name: PR Policy (cursor/*)
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+jobs:
+  policy:
+    if: startsWith(github.head_ref, 'cursor/')
+    permissions:
+      pull-requests: write
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate & label for automerge
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo  = context.repo.repo;
+            const pr    = context.payload.pull_request;
+            const num   = pr.number;
+
+            // 1) Ensure label exists
+            const wantLabel = 'automerge';
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: wantLabel });
+            } catch {
+              await github.rest.issues.createLabel({ owner, repo, name: wantLabel, color: '2ea44f' });
+            }
+
+            // 2) Basic PR body check (Summary/Test Plan/Risks present)
+            const body = (pr.body || '').toLowerCase();
+            const hasTemplate = ['summary', 'test plan', 'risks'].every(k => body.includes(k));
+            if (!hasTemplate) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: num, body: 'Policy: please include **Summary / Test Plan / Risks** (≤12 lines). No automerge label added.' });
+              core.notice('Missing PR template fields'); return;
+            }
+
+            // 3) Size gate: ≤10 files and ≤500 changed lines total
+            const files = await github.paginate(github.rest.pulls.listFiles, { owner, repo, pull_number: num, per_page: 100 });
+            const fileCount = files.length;
+            const totalChanges = files.reduce((s,f)=> s + (f.changes||0), 0);
+            core.notice(`fileCount=${fileCount}, totalChanges=${totalChanges}`);
+            if (fileCount > 10 || totalChanges > 500) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: num, body: `Policy: PR too large (files=${fileCount}, changes=${totalChanges}). No automerge label.` });
+              return;
+            }
+
+            // 4) Apply label for automerge
+            await github.rest.issues.addLabels({ owner, repo, issue_number: num, labels: [wantLabel] });
+            core.notice('Applied automerge label');
