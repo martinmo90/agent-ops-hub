@@ -1,38 +1,74 @@
-name: Auto Open PR on push (cursor/*)
+name: Auto Open PR on Push
+
 on:
   push:
-    branches:
-      - 'cursor/**'
+    branches-ignore:
+      - main
+      - 'gh-pages'
+      - 'dependabot/**'
   workflow_dispatch:
+    inputs:
+      head:
+        description: 'Head branch (source)'
+        required: true
+        default: ''
+      base:
+        description: 'Base branch (destination)'
+        required: true
+        default: 'main'
+      draft:
+        description: 'Create PR as draft'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: auto-open-pr-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  open:
-    permissions:
-      contents: write
-      pull-requests: write
+  open-pr:
     runs-on: ubuntu-latest
     steps:
-      - name: Ensure a PR exists from the pushed branch to main
-        uses: actions/github-script@v7
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine branches
+        id: br
+        run: |
+          # From push, head = ref_name; base = main
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "head=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+            echo "base=main" >> $GITHUB_OUTPUT
+            echo "draft=false" >> $GITHUB_OUTPUT
+          else
+            # workflow_dispatch
+            echo "head=${{ inputs.head }}" >> $GITHUB_OUTPUT
+            echo "base=${{ inputs.base }}" >> $GITHUB_OUTPUT
+            echo "draft=${{ inputs.draft }}" >> $GITHUB_OUTPUT
+          fi
+          echo "ref_name=${GITHUB_REF_NAME}"
+
+      - name: Open PR (head → base)
+        uses: repo-sync/pull-request@v2
         with:
-          script: |
-            const owner = context.repo.owner;
-            const repo  = context.repo.repo;
-            const head  = context.ref.replace('refs/heads/','');
-            const base  = 'main';
-            // Skip if the head IS main
-            if (head === base) {
-              core.notice('Head is main; nothing to do.');
-              return;
-            }
-            // List existing PRs from head->base
-            const prs = await github.rest.pulls.list({ owner, repo, state: 'open', head: `${owner}:${head}`, base });
-            if (prs.data.length) {
-              core.notice(`PR already exists: ${prs.data[0].html_url}`);
-              return;
-            }
-            const title = `chore: auto-open PR for ${head}`;
-            const body  = `Auto-created PR for branch **${head}** → **${base}**.\n\nSummary:\n- Auto-opened by workflow.\n\nTest Plan:\n- CI runs on PR.\n\nRisks:\n- Low.`;
-            const res = await github.rest.pulls.create({ owner, repo, head, base, title, body, draft: false });
-            core.notice(`Created PR: ${res.data.html_url}`);
-            // Optional: nudge Bugbot by commenting the magic phrase
-            await github.rest.issues.createComment({ owner, repo, issue_number: res.data.number, body: 'bugbot run' });
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          source_branch: ${{ steps.br.outputs.head }}
+          destination_branch: ${{ steps.br.outputs.base }}
+          pr_title: "auto: open PR for ${{ steps.br.outputs.head }} → ${{ steps.br.outputs.base }}"
+          pr_body: |
+            Auto-opened by workflow.
+            - Head: `${{ steps.br.outputs.head }}`
+            - Base: `${{ steps.br.outputs.base }}`
+            - SHA: `${{ github.sha }}`
+            - Actor: `${{ github.actor }}`
+            - Event: `${{ github.event_name }}`
+          pr_draft: ${{ steps.br.outputs.draft }}
+          pr_assignee: ""
+          pr_reviewer: ""
+          pr_label: "auto-opened,ci"
+          maintainer_can_modify: true
