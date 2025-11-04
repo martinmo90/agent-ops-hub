@@ -1,0 +1,63 @@
+name: build-zip
+on:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  zip:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Install ops dashboard dependencies
+        run: npm run ops:install
+      - name: Build ops dashboard
+        run: npm run ops:build
+      - name: Detect build output
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_DIR=""
+          if [ -d apps ]; then
+            BUILD_DIR=$(find apps -maxdepth 4 -type d \( -name dist -o -name build \) | head -n1 || true)
+          fi
+          if [ -z "$BUILD_DIR" ]; then
+            for d in dist build; do
+              if [ -d "$d" ]; then
+                BUILD_DIR="$d"
+                break
+              fi
+            done
+          fi
+          if [ -z "$BUILD_DIR" ] && [ -d apps/ops-dashboard/.next ]; then
+            BUILD_DIR="apps/ops-dashboard/.next"
+          fi
+          if [ -z "$BUILD_DIR" ]; then
+            echo "No build directory found" >&2
+            exit 1
+          fi
+          echo "build_dir=$BUILD_DIR" >> "$GITHUB_OUTPUT"
+          echo "Using BUILD_DIR=$BUILD_DIR"
+      - name: Zip artifact
+        shell: bash
+        env:
+          BUILD_DIR: ${{ steps.detect.outputs.build_dir }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          SHORT_SHA=${GITHUB_SHA::7}
+          echo "SHORT_SHA=$SHORT_SHA" >> "$GITHUB_ENV"
+          zip -r "artifacts/ops-dashboard-${SHORT_SHA}.zip" "$BUILD_DIR"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ops-dashboard-${{ env.SHORT_SHA }}.zip
+          path: artifacts/ops-dashboard-${{ env.SHORT_SHA }}.zip
+          if-no-files-found: error
+          retention-days: 7
