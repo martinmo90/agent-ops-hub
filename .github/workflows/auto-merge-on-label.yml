@@ -1,0 +1,67 @@
+name: Auto-merge on label (cursor/*)
+on:
+  pull_request:
+    types: [labeled, synchronize, reopened, ready_for_review]
+jobs:
+  automerge:
+    if: startsWith(github.head_ref, 'cursor/')
+    permissions:
+      pull-requests: write
+      contents: write
+      checks: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge when green and labeled
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo  = context.repo.repo;
+            const pr    = context.payload.pull_request;
+            const num   = pr.number;
+
+            // Require 'automerge' label
+            const labels = pr.labels.map(l => l.name);
+            if (!labels.includes('automerge')) {
+              core.notice('No automerge label; skipping'); return;
+            }
+
+            // Helper to fetch PR + checks
+            async function getPR() {
+              return (await github.rest.pulls.get({ owner, repo, pull_number: num })).data;
+            }
+            async function checksGreen(sha) {
+              // Combined status (legacy)
+              const status = await github.rest.repos.getCombinedStatusForRef({ owner, repo, ref: sha });
+              const okStatus = ['success', 'neutral'].includes(status.data.state);
+              // Check-suites (modern)
+              const suites = await github.request('GET /repos/{owner}/{repo}/commits/{ref}/check-suites', { owner, repo, ref: sha });
+              const suitesOk = suites.data.check_suites.length === 0 ||
+                suites.data.check_suites.every(s => ['success','neutral','skipped'].includes(s.conclusion || ''));
+              return okStatus && suitesOk;
+            }
+
+            // Poll until mergeable & green
+            let tries = 20;
+            let prData = await getPR();
+            while (tries-- > 0) {
+              if (await checksGreen(prData.head.sha) && ['clean', 'unstable', 'has_hooks'].includes(prData.mergeable_state || '')) break;
+              await new Promise(r => setTimeout(r, 15000));
+              prData = await getPR();
+            }
+            core.notice(`mergeable_state=${prData.mergeable_state}`);
+
+            // Optionally approve if required reviews are enabled
+            try {
+              await github.rest.pulls.createReview({ owner, repo, pull_number: num, event: 'APPROVE', body: 'Auto-approval by GitHub Actions bot.' });
+            } catch (e) {
+              core.warning(`Review approval not applied: ${e.message}`);
+            }
+
+            // Attempt merge (squash)
+            try {
+              await github.rest.pulls.merge({ owner, repo, pull_number: num, merge_method: 'squash' });
+              core.notice(`Merged PR #${num}`);
+            } catch (e) {
+              core.setFailed(`Merge failed: ${e.message}`);
+            }
