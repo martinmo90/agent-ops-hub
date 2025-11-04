@@ -13,6 +13,7 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            const core = require('@actions/core');
             const body = `Summary
 - Add AI governance handbook and align Cursor rules/templates.
 
