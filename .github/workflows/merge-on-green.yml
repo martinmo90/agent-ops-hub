@@ -1,0 +1,42 @@
+name: Merge on green (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      number:
+        description: 'PR number'
+        required: true
+jobs:
+  merge:
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = Number(core.getInput('number'));
+            const owner = context.repo.owner;
+            const repo  = context.repo.repo;
+
+            // Wait briefly for GitHub to compute mergeability.
+            async function fetchPR() {
+              return (await github.rest.pulls.get({ owner, repo, pull_number: prNumber })).data;
+            }
+            let pr = await fetchPR();
+            let tries = 10;
+            while ((pr.mergeable_state === 'unknown' || pr.mergeable_state == null) && tries-- > 0) {
+              await new Promise(r => setTimeout(r, 3000));
+              pr = await fetchPR();
+            }
+            core.notice(`mergeable_state=${pr.mergeable_state}`);
+
+            if (pr.mergeable_state !== 'clean') {
+              core.setFailed(`PR #${prNumber} not clean (state=${pr.mergeable_state}).`);
+              return;
+            }
+
+            await github.rest.pulls.merge({
+              owner, repo, pull_number: prNumber, merge_method: 'squash'
+            });
+            core.notice(`Merged PR #${prNumber}`);
