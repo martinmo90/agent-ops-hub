@@ -1,0 +1,19 @@
+name: 🧹 Task / chore
+description: Maintenance, refactor, docs, or CI work
+title: "chore: <short summary>"
+labels: ["chore", "needs-triage"]
+body:
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What exactly needs to be done?
+    validations:
+      required: true
+  - type: checkboxes
+    id: risk
+    attributes:
+      label: Risk
+      options:
+        - label: No production risk
+        - label: Requires rollout plan
