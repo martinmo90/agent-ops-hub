@@ -32,7 +32,7 @@ jobs:
             }
             const title = `chore: auto-open PR for ${head}`;
             const body  = `Auto-created PR for branch **${head}** → **${base}**.\n\nSummary:\n- Auto-opened by workflow.\n\nTest Plan:\n- CI runs on PR.\n\nRisks:\n- Low.`;
-            const res = await github.rest.pulls.create({ owner, repo, head, base, title, body, draft: true });
+            const res = await github.rest.pulls.create({ owner, repo, head, base, title, body, draft: false });
             core.notice(`Created PR: ${res.data.html_url}`);
             // Optional: nudge Bugbot by commenting the magic phrase
             await github.rest.issues.createComment({ owner, repo, issue_number: res.data.number, body: 'bugbot run' });

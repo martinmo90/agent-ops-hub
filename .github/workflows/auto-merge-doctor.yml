@@ -1,0 +1,88 @@
+name: Auto-merge Doctor
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: 'PR number to diagnose'
+        required: true
+        type: number
+      fix:
+        description: 'Attempt fixes (mark ready, add label, try merge)'
+        required: false
+        default: false
+        type: boolean
+jobs:
+  doctor:
+    permissions:
+      contents: write
+      pull-requests: write
+      checks: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Diagnose & optionally fix
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const core = require('@actions/core');
+            const prNum = Number(core.getInput('pr'));
+            const doFix = core.getBooleanInput('fix');
+            const owner = context.repo.owner;
+            const repo  = context.repo.repo;
+
+            const pr = (await github.rest.pulls.get({ owner, repo, pull_number: prNum })).data;
+            core.notice(`pr_state=${pr.state} draft=${pr.draft} mergeable_state=${pr.mergeable_state}`);
+            core.notice(`head_ref=${pr.head.ref} head_sha=${pr.head.sha}`);
+            const labels = pr.labels.map(l => l.name);
+            core.notice(`labels=${labels.join(',') || '(none)'}`);
+
+            const body = (pr.body || '').toLowerCase();
+            const hasTemplate = ['summary','test plan','risks'].every(k => body.includes(k));
+            core.notice(`body_has_template=${hasTemplate}`);
+
+            const files = await github.paginate(github.rest.pulls.listFiles, { owner, repo, pull_number: prNum, per_page: 100 });
+            const fileCount = files.length;
+            const totalChanges = files.reduce((s,f) => s + (f.changes || 0), 0);
+            core.notice(`files=${fileCount} changes=${totalChanges}`);
+
+            const status = await github.rest.repos.getCombinedStatusForRef({ owner, repo, ref: pr.head.sha });
+            const suites = await github.request('GET /repos/{owner}/{repo}/commits/{ref}/check-suites', { owner, repo, ref: pr.head.sha });
+            const okStatus = ['success','neutral'].includes(status.data.state);
+            const suitesOk = suites.data.check_suites.length === 0 ||
+              suites.data.check_suites.every(s => ['success','neutral','skipped'].includes(s.conclusion || ''));
+            const green = okStatus && suitesOk;
+            core.notice(`combined_status=${status.data.state}`);
+            core.notice(`check_suites=${suites.data.check_suites.map(s => `${s.app.slug}:${s.conclusion||'pending'}`).join('|') || '(none)'}`);
+            core.notice(`all_checks_green=${green}`);
+
+            const reasons = [];
+            if (pr.draft) reasons.push('PR is draft');
+            if (!labels.includes('automerge')) reasons.push('missing automerge label');
+            if (!hasTemplate) reasons.push('body missing Summary/Test Plan/Risks');
+            if (fileCount > 10 || totalChanges > 500) reasons.push('too large for policy');
+            if (!green) reasons.push('checks not green');
+            core.notice(`diagnosis=${reasons.join('; ') || 'none (should be mergeable)'}`);
+
+            if (!doFix) return;
+
+            // Fixes
+            if (pr.draft) {
+              await github.rest.pulls.update({ owner, repo, pull_number: prNum, draft: false });
+              core.notice('Marked PR ready for review');
+            }
+            if (!labels.includes('automerge') && hasTemplate && fileCount <= 10 && totalChanges <= 500) {
+              await github.rest.issues.addLabels({ owner, repo, issue_number: prNum, labels: ['automerge'] });
+              core.notice('Added automerge label');
+            }
+
+            // Refresh PR + try merge if green
+            const pr2 = (await github.rest.pulls.get({ owner, repo, pull_number: prNum })).data;
+            if (green && ['clean','unstable','has_hooks'].includes(pr2.mergeable_state || '')) {
+              try {
+                await github.rest.pulls.merge({ owner, repo, pull_number: prNum, merge_method: 'squash' });
+                core.notice('Merged via doctor');
+              } catch (e) {
+                core.warning(`Merge attempt failed: ${e.message}`);
+              }
+            } else {
+              core.notice('Skipping merge because checks not green or mergeable_state not ready');
+            }
