@@ -1,0 +1,30 @@
+name: Temp Update PR Body
+on:
+  push:
+    branches:
+      - cursor/ai-governance-handbook-20251104
+jobs:
+  update-body:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Update PR body
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `Summary
+- Add AI governance handbook and align Cursor rules/templates.
+
+Test Plan
+- Docs-only update; no commands required.
+
+Risks
+- Low; documentation-only change.`;
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: 21,
+              body
+            });
+            core.notice('Updated PR body');
