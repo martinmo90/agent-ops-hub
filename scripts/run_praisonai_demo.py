@@ -3,7 +3,6 @@
 PraisonAI demo wrapper - generates timestamped artifact file.
 No external API calls required.
 """
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 
