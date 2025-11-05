@@ -1,0 +1,25 @@
+name: OS Smoke Artifact
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+jobs:
+  build-artifact:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Make placeholder content
+        run: |
+          mkdir -p artifacts
+          echo "OS smoke artifact - $(date -u +"%Y-%m-%dT%H:%M:%SZ")" > artifacts/README.txt
+          # create a stable zip named artifacts/os-smoke.zip
+          cd artifacts
+          zip -q -r os-smoke.zip README.txt
+      - name: Upload placeholder zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: os-smoke-zip
+          path: artifacts/os-smoke.zip
+          if-no-files-found: error
+          retention-days: 7
