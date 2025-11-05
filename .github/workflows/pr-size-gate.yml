@@ -23,18 +23,23 @@ jobs:
               { owner, repo, pull_number: num, per_page: 100 }
             );
             const fileCount    = files.length;
-            const totalChanges = files.reduce((s,f)=> s + (f.changes||0), 0);
+            const totalChanges = files.reduce((s,f)=> s + (f.changes || 0), 0);
 
             core.notice(`fileCount=${fileCount}, totalChanges=${totalChanges}`);
 
-            const MAX_FILES = 10;
+            const MAX_FILES   = 10;
             const MAX_CHANGES = 500;
 
             if (fileCount > MAX_FILES || totalChanges > MAX_CHANGES) {
-              await github.rest.issues.createComment({
-                owner, repo, issue_number: num,
-                body: `⚠️ PR too large for policy.\n\n- Files: **${fileCount}** (limit ${MAX_FILES})\n- Changes: **${totalChanges}** (limit ${MAX_CHANGES})\n\nPlease split this PR into smaller chunks.`
-              });
+              const msg = [
+                '⚠️ PR too large for policy.',
+                '',
+                `- Files: **${fileCount}** (limit ${MAX_FILES})`,
+                `- Changes: **${totalChanges}** (limit ${MAX_CHANGES})`,
+                '',
+                'Please split this PR into smaller chunks.'
+              ].join('\n');
+              await github.rest.issues.createComment({ owner, repo, issue_number: num, body: msg });
               core.setFailed(`PR too large (files=${fileCount}, changes=${totalChanges})`);
             } else {
               core.notice('PR within size policy.');
