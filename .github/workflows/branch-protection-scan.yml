@@ -1,0 +1,31 @@
+name: Branch Protection Scan
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure jq (if missing)
+        run: |
+          if ! command -v jq >/dev/null; then
+            sudo apt-get update -y
+            sudo apt-get install -y jq
+          fi
+
+      - name: Run scan
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          bash scripts/branch_protection_scan.sh
