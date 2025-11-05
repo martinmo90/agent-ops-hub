@@ -28,7 +28,7 @@ NEED_SMOKE="os-smoke"  # job name from os-smoke-artifact workflow; change if dif
 
 HAS_BG="no";   [[ ",${REQUIRED_CONTEXTS}," == *",${NEED_BG},"* ]] && HAS_BG="yes"
 HAS_SIZE="no"; [[ ",${REQUIRED_CONTEXTS}," == *",${NEED_SIZE},"* ]] && HAS_SIZE="yes"
-HAS_SMOKE="no";[[ ",${REQUIRED_CONTEXTS}," == *",${NEED_SMOKE},"* ]] && HAS_SMOKE="yes"
+HAS_SMOKE="no"; [[ ",${REQUIRED_CONTEXTS}," == *",${NEED_SMOKE},"* ]] && HAS_SMOKE="yes"
 
 # Merge queue hint (rulesets API is best-effort and plan-dependent)
 MQ_HINT="unknown"
