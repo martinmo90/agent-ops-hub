@@ -36,6 +36,13 @@ watch_run() {
 
 # Interactive mode - select a run to watch
 interactive_watch() {
+  # Check if fzf is available
+  if ! command -v fzf >/dev/null 2>&1; then
+    echo "❌ Error: fzf is required for interactive mode but not found."
+    echo "Install fzf: https://github.com/junegunn/fzf#installation"
+    exit 2
+  fi
+  
   echo "🔄 Fetching recent workflow runs..."
   echo ""
   
