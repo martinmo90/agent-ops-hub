@@ -114,6 +114,45 @@ npm run shadcn:dev
 npm run shadcn:test:hi
 ```
 
+## Agent Demos
+
+Demo wrappers for vendor agent frameworks that generate timestamped artifact files for CI validation.
+
+### Running Locally
+
+**Using Python directly:**
+
+```bash
+python scripts/run_praisonai_demo.py
+python scripts/run_langroid_demo.py
+```
+
+**Using Make:**
+
+```bash
+make agent-demo-praisonai
+make agent-demo-langroid
+```
+
+Each script creates an artifact file in `artifacts/` with a timestamp and status message.
+
+### CI Artifacts
+
+On every pull request, the **OS Smoke Artifact** workflow runs both demo scripts and uploads the results as a `os-smoke` artifact. You can find the artifact in the PR checks:
+
+1. Go to the "Checks" tab on your PR
+2. Click on "OS Smoke Artifact" workflow
+3. Download the `os-smoke` artifact from the workflow summary
+
+### Vendor Submodules
+
+The following agent frameworks are included as read-only git submodules:
+
+- `vendor/PraisonAI` - [MervinPraison/PraisonAI](https://github.com/MervinPraison/PraisonAI)
+- `vendor/langroid` - [langroid/langroid](https://github.com/langroid/langroid)
+
+These are reference-only and not directly executed by the demo scripts.
+
 ## Project Structure
 
 ```
@@ -125,6 +164,9 @@ agent-ops-hub/
 │   │   ├── data/               # Mock JSON data
 │   │   └── *.ps1               # PowerShell helper scripts
 │   └── shadcn-chatbot-kit/     # Git submodule (port 3333)
+├── vendor/
+│   ├── PraisonAI/              # Git submodule (read-only)
+│   └── langroid/               # Git submodule (read-only)
 ├── config/
 │   └── shadcn-templates/       # Templates for shadcn app
 ├── docs/                       # Documentation

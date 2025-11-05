@@ -1,0 +1,50 @@
+name: OS Smoke Artifact
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  generate-artifacts:
+    name: Generate Agent Demo Artifacts
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Run PraisonAI demo
+        run: python scripts/run_praisonai_demo.py
+      
+      - name: Run Langroid demo
+        run: python scripts/run_langroid_demo.py
+      
+      - name: List artifacts
+        run: |
+          echo "Generated artifacts:"
+          ls -lh artifacts/os-agent-demo-*.txt
+      
+      - name: Create artifact zip
+        run: |
+          cd artifacts
+          zip -r ../os-smoke.zip os-agent-demo-*.txt
+          cd ..
+      
+      - name: Upload os-smoke artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: os-smoke
+          path: os-smoke.zip
+          retention-days: 30
