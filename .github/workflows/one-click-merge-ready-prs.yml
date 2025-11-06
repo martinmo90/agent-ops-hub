@@ -148,7 +148,6 @@ jobs:
 
             // Optional merge
             let merged = 0;
-            const mergedList = [];
             if (mode === 'merge') {
               for (const r of ready) {
                 if (merged >= MAX) break;
@@ -158,7 +157,6 @@ jobs:
                   });
                   if (res.status === 200 && res.data.merged) {
                     merged++;
-                    mergedList.push(r);
                     // Comment success
                     await github.rest.issues.createComment({
                       owner, repo, issue_number: r.number,
