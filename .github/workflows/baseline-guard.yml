@@ -1,10 +1,56 @@
-name: Baseline Guard / verify
+name: Baseline Guard / verifyExpected
 on:
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: read
+
 jobs:
-  verify:
-    name: Baseline Guard / verify
+  verifyExpected:
+    name: Baseline Guard / verifyExpected
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Baseline OK"
+      - uses: actions/checkout@v4
+      
+      - name: Verify baseline files exist
+        run: |
+          echo "Checking baseline files from manifest.json..."
+          
+          # Check if manifest.json exists
+          if [ ! -f "manifest.json" ]; then
+            echo "::error::manifest.json not found"
+            exit 1
+          fi
+          
+          # Extract baseline file paths from manifest.json (jq is pre-installed on ubuntu-latest)
+          BASELINE_FILES=$(jq -r '.artifacts[].path' manifest.json)
+          
+          # Check if any baseline files were found
+          if [ -z "$(echo "$BASELINE_FILES" | tr -d '[:space:]')" ]; then
+            echo "::warning::No baseline files found in manifest.json"
+          fi
+          
+          # Check each baseline file (IFS set to handle paths correctly)
+          MISSING_FILES=()
+          while IFS= read -r file; do
+            if [ -n "$file" ]; then
+              if [ -f "$file" ]; then
+                echo "✓ $file exists"
+              else
+                echo "::error::Missing baseline file: $file"
+                MISSING_FILES+=("$file")
+              fi
+            fi
+          done <<< "$BASELINE_FILES"
+          
+          # Fail if any files are missing
+          if [ ${#MISSING_FILES[@]} -ne 0 ]; then
+            echo ""
+            echo "::error::${#MISSING_FILES[@]} baseline file(s) missing:"
+            printf '  - %s\n' "${MISSING_FILES[@]}"
+            exit 1
+          fi
+          
+          echo ""
+          echo "✅ All baseline files verified successfully!"

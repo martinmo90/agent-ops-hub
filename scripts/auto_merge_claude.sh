@@ -5,7 +5,7 @@ set -euo pipefail
 OWNER="martinmo90"
 REPO="agent-ops-hub"
 BRANCH_PREFIX="claude/"                 # only auto-merge PRs from these heads
-REQUIRED_CHECKS=("Baseline Guard / verify")  # must be green
+REQUIRED_CHECKS=("Baseline Guard / verifyExpected")  # must be green
 MERGE_METHOD="squash"                   # squash | merge | rebase
 DELETE_HEAD_AFTER_MERGE="true"          # delete merged head branch
 DRY_RUN="${DRY_RUN:-false}"             # set DRY_RUN=true to simulate
