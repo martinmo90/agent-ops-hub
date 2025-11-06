@@ -19,9 +19,15 @@ fi
 echo "📥 Fetching latest changes..."
 git fetch origin
 
-# Checkout the cursor branch
+# Create/checkout the cursor branch
 echo "🌿 Checking out $BRANCH..."
-git checkout "$BRANCH"
+if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
+    git checkout "$BRANCH"
+else
+    echo "  Branch not found locally, fetching from origin..."
+    git fetch origin "$BRANCH:$BRANCH"
+    git checkout "$BRANCH"
+fi
 
 # Attempt to merge main
 echo "🔀 Merging $TARGET with --allow-unrelated-histories..."
@@ -32,31 +38,41 @@ else
     
     # Resolve conflicts by accepting main's versions
     echo "📝 Accepting $TARGET's versions for conflicting files..."
-    git checkout --theirs .github/pull_request_template.md
-    git checkout --theirs .github/workflows/auto-merge-on-label.yml 2>/dev/null || true
-    git checkout --theirs .github/workflows/auto-open-pr-on-push.yml 2>/dev/null || true
-    git checkout --theirs .github/workflows/baseline-guard.yml 2>/dev/null || true
-    git checkout --theirs .github/workflows/merge-on-green.yml 2>/dev/null || true
-    git checkout --theirs README.md 2>/dev/null || true
-    git checkout --theirs scripts/auto_merge_claude.sh 2>/dev/null || true
+    
+    # List of files that may have conflicts
+    CONFLICT_FILES=(
+        ".github/pull_request_template.md"
+        ".github/workflows/auto-merge-on-label.yml"
+        ".github/workflows/auto-open-pr-on-push.yml"
+        ".github/workflows/baseline-guard.yml"
+        ".github/workflows/merge-on-green.yml"
+        "README.md"
+        "scripts/auto_merge_claude.sh"
+    )
+    
+    for file in "${CONFLICT_FILES[@]}"; do
+        if git status --porcelain | grep -q "^[AUD][AUD] $file"; then
+            echo "  Resolving: $file"
+            git checkout --theirs "$file" || echo "  ⚠️  Warning: Could not resolve $file"
+        fi
+    done
     
     # Stage all changes
     git add .
     
     # Commit the resolution
     echo "💾 Committing resolution..."
-    git commit -m "chore: resolve merge conflicts with main branch
-
-Resolved conflicts by accepting main branch's versions for:
-- .github/pull_request_template.md (primary conflict)
-- .github/workflows/*.yml files
-- README.md
-- scripts/auto_merge_claude.sh
-
-This aligns the cursor branch with the current project state and
-allows PR #17 to proceed to review.
-
-Evidence: Merge commit resolving unrelated histories issue"
+    git commit -m "chore: resolve merge conflicts with main branch" \
+               -m "Resolved conflicts by accepting main branch's versions for:" \
+               -m "- .github/pull_request_template.md (primary conflict)" \
+               -m "- .github/workflows/*.yml files" \
+               -m "- README.md" \
+               -m "- scripts/auto_merge_claude.sh" \
+               -m "" \
+               -m "This aligns the cursor branch with the current project state and" \
+               -m "allows PR #17 to proceed to review." \
+               -m "" \
+               -m "Evidence: Merge commit resolving unrelated histories issue"
 fi
 
 echo "✅ Conflicts resolved successfully!"
