@@ -27,15 +27,15 @@ jobs:
           fi
           
           # Extract baseline file paths from manifest.json (jq is pre-installed on ubuntu-latest)
-          BASELINE_FILES=$(jq -r '.artifacts[].path' manifest.json 2>&1) || {
+          if ! BASELINE_FILES=$(jq -r '.artifacts[].path' manifest.json 2>/dev/null); then
             echo "::error::Failed to parse manifest.json with jq"
             exit 1
-          }
+          fi
           
           # Check if any baseline files were found
           if [ -z "$(echo "$BASELINE_FILES" | tr -d '[:space:]')" ]; then
             echo "::warning::No baseline files found in manifest.json"
-            echo "✅ No baseline files to verify"
+            echo "✅ No baseline files to verify (0 files)"
             exit 0
           fi
           
