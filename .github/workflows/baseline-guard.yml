@@ -2,6 +2,10 @@ name: Baseline Guard / verifyExpected
 on:
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: read
+
 jobs:
   verifyExpected:
     name: Baseline Guard / verifyExpected
