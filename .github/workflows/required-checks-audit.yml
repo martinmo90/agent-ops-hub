@@ -1,0 +1,42 @@
+name: Required Checks Audit
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (shallow)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Show required status checks on main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          owner="${GITHUB_REPOSITORY%/*}"
+          repo="${GITHUB_REPOSITORY#*/}"
+          echo "## Branch protection (main) — required checks"
+          gh api repos/$owner/$repo/branches/main/protection \
+            --jq '.required_status_checks.contexts // []' | sed 's/^/ - /' || echo "(no explicit contexts)"
+
+      - name: List workflow job names from recent runs (for mapping)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          owner="${GITHUB_REPOSITORY%/*}"
+          repo="${GITHUB_REPOSITORY#*/}"
+          echo "## Recent workflow runs & job names"
+          # Last 10 runs, print "Workflow / Job" names (how GitHub displays in checks)
+          runs=$(gh api repos/$owner/$repo/actions/runs --jq '.workflow_runs[:10][] | [.id, .name] | @tsv')
+          while IFS=$'\t' read -r run_id wf_name; do
+            echo "- $wf_name"
+            jobs=$(gh api repos/$owner/$repo/actions/runs/$run_id/jobs --jq '.jobs[] | .name' || true)
+            while IFS= read -r j; do
+              echo "  • ${wf_name} / ${j}"
+            done <<< "$jobs"
+          done <<< "$runs"
