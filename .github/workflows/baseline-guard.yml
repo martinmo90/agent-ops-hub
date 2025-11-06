@@ -10,11 +10,14 @@ jobs:
   verifyExpected:
     name: Baseline Guard / verifyExpected
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       
       - name: Verify baseline files exist
+        timeout-minutes: 3
         run: |
+          set -euo pipefail
           echo "Checking baseline files from manifest.json..."
           
           # Check if manifest.json exists
@@ -24,17 +27,24 @@ jobs:
           fi
           
           # Extract baseline file paths from manifest.json (jq is pre-installed on ubuntu-latest)
-          BASELINE_FILES=$(jq -r '.artifacts[].path' manifest.json)
+          BASELINE_FILES=$(jq -r '.artifacts[].path' manifest.json 2>&1) || {
+            echo "::error::Failed to parse manifest.json with jq"
+            exit 1
+          }
           
           # Check if any baseline files were found
           if [ -z "$(echo "$BASELINE_FILES" | tr -d '[:space:]')" ]; then
             echo "::warning::No baseline files found in manifest.json"
+            echo "✅ No baseline files to verify"
+            exit 0
           fi
           
           # Check each baseline file (IFS set to handle paths correctly)
           MISSING_FILES=()
+          FILE_COUNT=0
           while IFS= read -r file; do
             if [ -n "$file" ]; then
+              FILE_COUNT=$((FILE_COUNT + 1))
               if [ -f "$file" ]; then
                 echo "✓ $file exists"
               else
@@ -53,4 +63,4 @@ jobs:
           fi
           
           echo ""
-          echo "✅ All baseline files verified successfully!"
+          echo "✅ All ${FILE_COUNT} baseline files verified successfully!"
