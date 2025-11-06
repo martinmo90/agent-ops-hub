@@ -2,7 +2,11 @@
 
 ## Overview
 
-The `cursor-check.md` file is a lightweight verification mechanism that confirms Cursor AI agent has write access to the repository and can successfully create documentation files. This file serves as a canary for CI/CD workflows that depend on agent-generated content.
+This file (`docs/cursor-check.md`) serves a dual purpose:
+1. **Self-documenting**: It documents the cursor check file concept
+2. **Verification Artifact**: Its existence proves Cursor AI agent has write access to the repository
+
+This file is a lightweight verification mechanism that confirms the Cursor AI agent can successfully create documentation files. It serves as a canary for CI/CD workflows that depend on agent-generated content.
 
 ## Purpose
 
@@ -57,12 +61,18 @@ When making changes that affect agent file creation or documentation:
 
 ## Troubleshooting
 
-### Cursor Check File Missing
+### Cursor Agent Write Access Issues
 
-If the cursor check file is missing:
-- Recreate it in `docs/cursor-check.md`
-- Ensure it contains valid markdown content
-- Commit and push the file
+If you suspect the Cursor agent cannot write to the repository:
+- Check repository permissions for the agent
+- Verify file system permissions on the `docs/` directory
+- Test by asking the agent to create or modify a test file
+- Check CI logs for permission-related errors
+
+If this documentation file is missing or corrupted:
+- It indicates a problem with agent file creation capabilities
+- Recreate it in `docs/cursor-check.md` with proper markdown content
+- Verify the agent has write access before continuing work
 
 ### CI Workflow Failures
 
