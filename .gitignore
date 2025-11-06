@@ -1,6 +1,3 @@
 node_modules/
 apps/shadcn-chatbot-kit/.env.local
 apps/shadcn-chatbot-kit/apps/www/.env.local
-artifacts/os-agent-demo-*.txt
-os-smoke.zip
-os-demo-nightly.zip

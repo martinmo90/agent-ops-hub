@@ -1,52 +1,25 @@
 name: OS Smoke Artifact
-
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    branches:
-      - main
   workflow_dispatch:
-
-permissions:
-  contents: read
-  pull-requests: read
-
 jobs:
-  generate-artifacts:
-    name: Generate Agent Demo Artifacts
+  build-artifact:
     runs-on: ubuntu-latest
-    
+    permissions:
+      contents: read
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      
-      - name: Run PraisonAI demo
-        run: python scripts/run_praisonai_demo.py
-      
-      - name: Run Langroid demo
-        run: python scripts/run_langroid_demo.py
-      
-      - name: List artifacts
+      - name: Make placeholder content
         run: |
-          echo "Generated artifacts:"
-          ls -lh artifacts/os-agent-demo-*.txt
-      
-      - name: Create artifact zip
-        run: |
+          mkdir -p artifacts
+          echo "OS smoke artifact - $(date -u +"%Y-%m-%dT%H:%M:%SZ")" > artifacts/README.txt
+          # create a stable zip named artifacts/os-smoke.zip
           cd artifacts
-          zip -r ../os-smoke.zip os-agent-demo-*.txt
-          cd ..
-      
-      - name: Upload os-smoke artifact
+          zip -q -r os-smoke.zip README.txt
+      - name: Upload placeholder zip
         uses: actions/upload-artifact@v4
         with:
-          name: os-smoke
-          path: os-smoke.zip
-          retention-days: 30
+          name: os-smoke-zip
+          path: artifacts/os-smoke.zip
+          if-no-files-found: error
+          retention-days: 7

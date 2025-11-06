@@ -114,45 +114,6 @@ npm run shadcn:dev
 npm run shadcn:test:hi
 ```
 
-## Agent Demos
-
-Demo wrappers for vendor agent frameworks that generate timestamped artifact files for CI validation.
-
-### Running Locally
-
-**Using Python directly:**
-
-```bash
-python scripts/run_praisonai_demo.py
-python scripts/run_langroid_demo.py
-```
-
-**Using Make:**
-
-```bash
-make agent-demo-praisonai
-make agent-demo-langroid
-```
-
-Each script creates an artifact file in `artifacts/` with a timestamp and status message.
-
-### CI Artifacts
-
-On every pull request, the **OS Smoke Artifact** workflow runs both demo scripts and uploads the results as a `os-smoke` artifact. You can find the artifact in the PR checks:
-
-1. Go to the "Checks" tab on your PR
-2. Click on "OS Smoke Artifact" workflow
-3. Download the `os-smoke` artifact from the workflow summary
-
-### Vendor Submodules
-
-The following agent frameworks are included as read-only git submodules:
-
-- `vendor/PraisonAI` - [MervinPraison/PraisonAI](https://github.com/MervinPraison/PraisonAI)
-- `vendor/langroid` - [langroid/langroid](https://github.com/langroid/langroid)
-
-These are reference-only and not directly executed by the demo scripts.
-
 ## Project Structure
 
 ```
@@ -164,9 +125,6 @@ agent-ops-hub/
 │   │   ├── data/               # Mock JSON data
 │   │   └── *.ps1               # PowerShell helper scripts
 │   └── shadcn-chatbot-kit/     # Git submodule (port 3333)
-├── vendor/
-│   ├── PraisonAI/              # Git submodule (read-only)
-│   └── langroid/               # Git submodule (read-only)
 ├── config/
 │   └── shadcn-templates/       # Templates for shadcn app
 ├── docs/                       # Documentation
@@ -211,40 +169,10 @@ Branches with `claude/` prefix can be auto-merged by the auto-merge script when 
 - `npm run shadcn:dev` - Start shadcn-chatbot-kit dev server
 - `npm run shadcn:test:hi` - Run shadcn greeting test
 - `npm run shadcn:anthropic:patch` - Apply Claude patch to shadcn app
-- `npm run monitor:prs` - Show open pull requests
-- `npm run monitor:runs` - List recent workflow runs
-- `npm run monitor:all` - Show both PRs and recent runs
 
 ### Automation scripts
 
 - `scripts/auto_merge_claude.sh` - Auto-merge claude/* PRs when checks pass
-- `scripts/monitor_prs_and_runs.sh` - Monitor pull requests and GitHub Actions workflow runs
-
-### Monitoring PRs and Workflow Runs
-
-Use the monitoring script to track pull requests and workflow runs:
-
-```bash
-# Show open pull requests
-scripts/monitor_prs_and_runs.sh prs
-
-# List recent workflow runs (default: 5)
-scripts/monitor_prs_and_runs.sh runs
-
-# List more workflow runs
-scripts/monitor_prs_and_runs.sh runs 10
-
-# Watch a specific workflow run
-scripts/monitor_prs_and_runs.sh watch <run-id>
-
-# Show both PRs and recent runs
-scripts/monitor_prs_and_runs.sh all
-
-# Interactive mode (requires fzf)
-scripts/monitor_prs_and_runs.sh interactive
-```
-
-**Requirements:** GitHub CLI (`gh`) must be installed and authenticated. Run `gh auth login` to authenticate.
 
 ## License
 
