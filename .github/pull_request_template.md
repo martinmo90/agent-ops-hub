@@ -1,8 +1,23 @@
-Summary
-- What changed and why (≤2 bullets).
+## Summary
+<!-- Use conventional commits in the title, e.g. "feat: add merge-queue policy" -->
 
-Test Plan
-- Commands run (or CI) and expected outputs (1–3 bullets).
+- **What**: Briefly describe the change.
+- **Why**: Link to issue(s) or context.
+- **How**: Implementation outline.
 
-Risks
-- Brief note on blast radius (keep total body ≤12 lines).
+## Screenshots / Evidence (if UI or reports)
+<!-- drag/drop images or paste links -->
+
+## Linked Issues
+Closes #__
+
+## Checklist
+- [ ] Title uses **conventional commits** (feat|fix|chore|docs|refactor|test|ci)(scope?): msg
+- [ ] Tests added/updated (if applicable)
+- [ ] Docs updated (if needed)
+- [ ] No secrets / tokens in code or logs
+- [ ] I ran the CI job locally or checked the workflow output
+
+## Breaking changes?
+- [ ] No
+- [ ] Yes — describe impact & migration

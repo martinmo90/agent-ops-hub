@@ -1,0 +1,33 @@
+name: ✨ Feature request
+description: Propose a new capability or improvement
+title: "feat: <short summary>"
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What user problem are we solving?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the change, acceptance criteria, and success metrics.
+      placeholder: |
+        - What it does
+        - How we validate it
+        - Done when...
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options: [P0, P1, P2, P3]
+      default: 2

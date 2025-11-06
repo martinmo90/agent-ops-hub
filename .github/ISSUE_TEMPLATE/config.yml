@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📜 Project Charter
+    url: https://github.com/martinmo90/agent-ops-hub/blob/main/PROJECT_CHARTER.md
+    about: Read how we work before filing issues.
