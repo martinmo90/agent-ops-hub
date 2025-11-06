@@ -22,7 +22,11 @@ jobs:
           echo "Default branch: $def" >> $GITHUB_STEP_SUMMARY
           if gh api repos/$owner/$repo/branches/$def/protection > bp.json 2>/dev/null; then
             echo "### Required status checks (contexts)" >> $GITHUB_STEP_SUMMARY
-            jq -r '.required_status_checks.checks[]?.context' bp.json | sed 's/^/- `&`/' >> $GITHUB_STEP_SUMMARY
+            if jq -e '.required_status_checks.checks | length > 0' bp.json >/dev/null 2>&1; then
+              jq -r '.required_status_checks.checks[]?.context' bp.json | sed 's/^/- `&`/' >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- (none configured)" >> $GITHUB_STEP_SUMMARY
+            fi
           else
             echo "No branch protection set on default branch." >> $GITHUB_STEP_SUMMARY
           fi
