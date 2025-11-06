@@ -22,7 +22,7 @@ jobs:
           test -f .gitmodules
           grep -q 'vendor/CopilotKit' .gitmodules
           # submodule should be a gitlink (mode 160000) not a normal dir of files
-          if git ls-tree HEAD vendor/CopilotKit | awk '{print $2}' | grep -qx 160000; then
+          if git ls-tree HEAD vendor/CopilotKit | awk '{print $1}' | grep -qx 160000; then
             echo "Submodule link OK"
           else
             echo "❌ vendor/CopilotKit is not a git submodule link"; exit 1
