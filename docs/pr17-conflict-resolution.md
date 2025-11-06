@@ -71,5 +71,21 @@ After resolution, PR #17 should:
 - Be ready for review and merge
 
 ## Artifacts
-- Resolution commit SHA: `581a028` (local)
+- Resolution commit SHA: `fa6c39d` (local after running script)
 - Resolved file: `/docs/pr17-conflict-resolution.md` (this document)
+- Resolution script: `/scripts/resolve_pr17_conflicts.sh`
+- Git bundle: `/artifacts/pr17-resolution.bundle`
+
+## Using the Git Bundle
+If you have a local copy of the repository and want to apply the resolution:
+
+```bash
+# Fetch the bundle
+git fetch /path/to/pr17-resolution.bundle cursor/pr-template-20251104:cursor/pr-template-20251104-resolved
+
+# Check out the resolved branch
+git checkout cursor/pr-template-20251104-resolved
+
+# Force push to the remote cursor branch (requires write access)
+git push origin cursor/pr-template-20251104-resolved:cursor/pr-template-20251104 --force-with-lease
+```
