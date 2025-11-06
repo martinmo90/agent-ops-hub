@@ -1,0 +1,43 @@
+name: OS Demo Nightly
+
+on:
+  schedule:
+    - cron: "0 17 * * *"  # 01:00 AWST = 17:00 UTC previous day
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      
+      - run: python scripts/run_praisonai_demo.py
+      
+      - run: python scripts/run_langroid_demo.py
+      
+      - name: List artifacts
+        run: |
+          echo "Generated artifacts:"
+          ls -lh artifacts/os-agent-demo-*.txt
+      
+      - name: Zip artifacts
+        run: |
+          cd artifacts
+          zip -r ../os-demo-nightly.zip os-agent-demo-*.txt
+      
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: os-demo-nightly
+          path: os-demo-nightly.zip
+          retention-days: 30
