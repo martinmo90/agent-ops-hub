@@ -10,7 +10,10 @@
     "ops:dev": "cd apps/ops-dashboard && npm run dev",
     "ops:build": "cd apps/ops-dashboard && npm run build",
     "ops:start": "cd apps/ops-dashboard && npm run start",
-    "ops:test": "playwright test tests/ops-dashboard-smoke.spec.ts --reporter=list"
+    "ops:test": "playwright test tests/ops-dashboard-smoke.spec.ts --reporter=list",
+    "monitor:prs": "scripts/monitor_prs_and_runs.sh prs",
+    "monitor:runs": "scripts/monitor_prs_and_runs.sh runs",
+    "monitor:all": "scripts/monitor_prs_and_runs.sh all"
   },
   "devDependencies": {
     "@playwright/test": "^1.48.2"

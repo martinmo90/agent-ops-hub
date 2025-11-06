@@ -211,10 +211,40 @@ Branches with `claude/` prefix can be auto-merged by the auto-merge script when 
 - `npm run shadcn:dev` - Start shadcn-chatbot-kit dev server
 - `npm run shadcn:test:hi` - Run shadcn greeting test
 - `npm run shadcn:anthropic:patch` - Apply Claude patch to shadcn app
+- `npm run monitor:prs` - Show open pull requests
+- `npm run monitor:runs` - List recent workflow runs
+- `npm run monitor:all` - Show both PRs and recent runs
 
 ### Automation scripts
 
 - `scripts/auto_merge_claude.sh` - Auto-merge claude/* PRs when checks pass
+- `scripts/monitor_prs_and_runs.sh` - Monitor pull requests and GitHub Actions workflow runs
+
+### Monitoring PRs and Workflow Runs
+
+Use the monitoring script to track pull requests and workflow runs:
+
+```bash
+# Show open pull requests
+scripts/monitor_prs_and_runs.sh prs
+
+# List recent workflow runs (default: 5)
+scripts/monitor_prs_and_runs.sh runs
+
+# List more workflow runs
+scripts/monitor_prs_and_runs.sh runs 10
+
+# Watch a specific workflow run
+scripts/monitor_prs_and_runs.sh watch <run-id>
+
+# Show both PRs and recent runs
+scripts/monitor_prs_and_runs.sh all
+
+# Interactive mode (requires fzf)
+scripts/monitor_prs_and_runs.sh interactive
+```
+
+**Requirements:** GitHub CLI (`gh`) must be installed and authenticated. Run `gh auth login` to authenticate.
 
 ## License
 
