@@ -1,0 +1,317 @@
+# .github/workflows/operational-status-scan.yml
+#
+# Run from Actions → Operational Status Scan → Run workflow.
+# Produces a single markdown report covering:
+# - Branch protection + required checks
+# - Benchmark manifest parity (paths + sha256)
+# - Submodules (PraisonAI, Langroid, CopilotKit)
+# - Open PRs readiness (ready / behind / blocked / drafts)
+# Posts the report to the job summary and to a repo Issue ("Operational Status Report").
+
+name: Operational Status Scan
+
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "Base branch to evaluate"
+        required: true
+        default: "main"
+      verify_manifest_hashes:
+        description: "If a benchmark manifest exists, verify sha256 matches"
+        type: choice
+        options: ["true","false"]
+        default: "true"
+      verify_submodules:
+        description: "Run `git submodule update --init --recursive` (best-effort)"
+        type: choice
+        options: ["true","false"]
+        default: "false"
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
+  actions: read
+  administration: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (shallow)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Ensure tools
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y jq
+
+      - name: Gather repo context
+        id: ctx
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          OWNER="${GITHUB_REPOSITORY%/*}"
+          REPO="${GITHUB_REPOSITORY#*/}"
+          BASE="${{ inputs.base }}"
+          # default branch
+          DEF=$(gh api repos/$OWNER/$REPO --jq .default_branch)
+          echo "owner=$OWNER" >> $GITHUB_OUTPUT
+          echo "repo=$REPO" >> $GITHUB_OUTPUT
+          echo "base=$BASE" >> $GITHUB_OUTPUT
+          echo "default_branch=$DEF" >> $GITHUB_OUTPUT
+          echo "Default branch: $DEF"
+
+      - name: Branch protection & required checks
+        id: bp
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          owner="${{ steps.ctx.outputs.owner }}"
+          repo="${{ steps.ctx.outputs.repo }}"
+          branch="${{ steps.ctx.outputs.base }}"
+          # Try to fetch protection; tolerate missing config
+          if ! gh api repos/$owner/$repo/branches/$branch/protection > bp.json 2>/dev/null; then
+            echo "protected=false" >> $GITHUB_OUTPUT
+            echo "No branch protection found on $branch" > bp.txt
+          else
+            echo "protected=true" >> $GITHUB_OUTPUT
+            jq . bp.json > /dev/null
+            REQ_CTX=$(jq -r '.required_status_checks.checks[]?.context' bp.json 2>/dev/null | sort -u || true)
+            echo "$REQ_CTX" > req_checks.txt
+            echo "required_checks<<EOF" >> $GITHUB_OUTPUT
+            echo "$REQ_CTX" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            # booleans
+            STRICT=$(jq -r '.required_status_checks.strict // false' bp.json)
+            REQ_PR=$([ "$(jq -e 'has("required_pull_request_reviews")' bp.json >/dev/null 2>&1; echo $?)" = 0 ] && echo true || echo false)
+            echo "strict_up_to_date=$STRICT" >> $GITHUB_OUTPUT
+            echo "require_pr=$REQ_PR" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Benchmark manifest parity (if present)
+        id: manifest
+        run: |
+          set -euo pipefail
+          MAN="benchmarks/benchmark_manifest.json"
+          if [ ! -f "$MAN" ]; then
+            echo "present=false" >> $GITHUB_OUTPUT
+            echo "No manifest at $MAN" > manifest.txt
+            exit 0
+          fi
+          echo "present=true" >> $GITHUB_OUTPUT
+          VERIFY="${{ inputs.verify_manifest_hashes }}"
+          mapfile -t LINES < <(jq -r '.items[] | [.expected_repo_path, .sha256, .zip_relpath] | @tsv' "$MAN")
+          ok=() miss=() diff=() alt_ok=() alt_miss=()
+          sha() { sha256sum "$1" | awk '{print $1}'; }
+          for line in "${LINES[@]}"; do
+            IFS=$'\t' read -r target hash src <<< "$line"
+            if [[ "$target" == *"|"* ]]; then
+              IFS='|' read -r -a alts <<< "$target"
+              found=""
+              for t in "${alts[@]}"; do t2="$(echo "$t" | xargs)"; [ -f "$t2" ] && found="$t2" && break; done
+              if [ -n "$found" ]; then
+                if [ "$VERIFY" = "true" ]; then
+                  [ "$(sha "$found")" = "$hash" ] && note="(hash match)" || note="(hash DIFF)"
+                else note=""; fi
+                alt_ok+=("| \`$src\` | \`$found\` | ✅ $note |")
+              else
+                alt_miss+=("| \`$src\` | \`$target\` | ❌ |")
+              fi
+            else
+              if [ -f "$target" ]; then
+                if [ "$VERIFY" = "true" ]; then
+                  [ "$(sha "$target")" = "$hash" ] && ok+=("| \`$src\` | \`$target\` | ✅ (hash match) |") || diff+=("| \`$src\` | \`$target\` | ⚠️ hash DIFF |")
+                else
+                  ok+=("| \`$src\` | \`$target\` | ✅ |")
+                fi
+              else
+                miss+=("| \`$src\` | \`$target\` | ❌ |")
+              fi
+            fi
+          done
+          # stash arrays to files
+          printf "%s\n" "${ok[@]}"     > ok.tbl || true
+          printf "%s\n" "${diff[@]}"   > diff.tbl || true
+          printf "%s\n" "${miss[@]}"   > miss.tbl || true
+          printf "%s\n" "${alt_ok[@]}" > alt_ok.tbl || true
+          printf "%s\n" "${alt_miss[@]}" > alt_miss.tbl || true
+
+      - name: Submodules status
+        id: submods
+        run: |
+          set -euo pipefail
+          PRAISON=no; LANGROID=no; COPILOTKIT=no
+          if [ -f .gitmodules ]; then
+            grep -qi "MervinPraison/PraisonAI" .gitmodules && PRAISON=yes || true
+            grep -qi "langroid/langroid" .gitmodules && LANGROID=yes || true
+            grep -qi "CopilotKit/CopilotKit" .gitmodules && COPILOTKIT=yes || true
+          fi
+          echo "praison=$PRAISON" >> $GITHUB_OUTPUT
+          echo "langroid=$LANGROID" >> $GITHUB_OUTPUT
+          echo "copilotkit=$COPILOTKIT" >> $GITHUB_OUTPUT
+
+          if [ "${{ inputs.verify_submodules }}" = "true" ]; then
+            git submodule update --init --recursive || true
+          fi
+          git submodule status || true > submodules.txt
+
+      - name: Open PRs — readiness scan
+        id: prs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          owner="${{ steps.ctx.outputs.owner }}"
+          repo="${{ steps.ctx.outputs.repo }}"
+          base="${{ steps.ctx.outputs.base }}"
+          # fetch open PRs to base
+          mapfile -t PRS < <(gh api repos/$owner/$repo/pulls --paginate -F state=open -F base="$base" --jq '.[] | [.number, .title, .draft] | @tsv')
+          if [ ${#PRS[@]} -eq 0 ]; then
+            echo "None" > prs_ready.txt
+            echo "None" > prs_behind.txt
+            echo "None" > prs_blocked.txt
+            echo "None" > prs_drafts.txt
+            exit 0
+          fi
+
+          ready=(); behind=(); blocked=(); drafts=()
+          sleep_short() { sleep 1; }
+
+          for row in "${PRS[@]}"; do
+            num=$(echo "$row" | cut -f1)
+            title=$(echo "$row" | cut -f2)
+            draft=$(echo "$row" | cut -f3)
+            # inflate to get mergeable_state and head sha
+            det=$(gh api repos/$owner/$repo/pulls/$num)
+            sha=$(echo "$det" | jq -r .head.sha)
+            state=$(echo "$det" | jq -r .mergeable_state) # clean, behind, blocked, dirty, unstable, unknown or null
+            [ "$state" = "null" ] && sleep_short && det=$(gh api repos/$owner/$repo/pulls/$num) && state=$(echo "$det" | jq -r .mergeable_state)
+
+            # checks summary
+            comb=$(gh api repos/$owner/$repo/commits/$sha/status)
+            cstate=$(echo "$comb" | jq -r .state) # success|failure|pending|error|null
+            checks_ok=false
+            if [ "$cstate" = "success" ]; then checks_ok=true; fi
+
+            if [ "$draft" = "true" ]; then
+              drafts+=("#$num — $title")
+            else
+              case "$state" in
+                clean|unstable|has_hooks)
+                  if [ "$checks_ok" = true ]; then ready+=("#$num — $title"); else blocked+=("#$num — $title (checks pending/failing)"); fi
+                ;;
+                behind) behind+=("#$num — $title");;
+                *) blocked+=("#$num — $title (state=$state)");;
+              esac
+            fi
+          done
+
+          printf "%s\n" "${ready[@]:-None}"   > prs_ready.txt
+          printf "%s\n" "${behind[@]:-None}"  > prs_behind.txt
+          printf "%s\n" "${blocked[@]:-None}" > prs_blocked.txt
+          printf "%s\n" "${drafts[@]:-None}"  > prs_drafts.txt
+
+      - name: Compose Operational Status Report
+        id: compose
+        run: |
+          set -euo pipefail
+          NOW="$(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          {
+            echo "# Operational Status Report ($NOW)"
+            echo
+            echo "## Governance & Branch Protection"
+            if [ "${{ steps.bp.outputs.protected }}" != "true" ]; then
+              echo "- Branch protection on **${{ inputs.base }}**: ❌ not configured"
+            else
+              echo "- Branch protection on **${{ inputs.base }}**: ✅ configured"
+              echo "- Require PRs: \`${{ steps.bp.outputs.require_pr || 'unknown' }}\`"
+              echo "- Strict up-to-date: \`${{ steps.bp.outputs.strict_up_to_date || 'unknown' }}\`"
+              echo "- Required checks:"
+              if [ -s req_checks.txt ]; then
+                awk '{print "  - `" $0 "`"}' req_checks.txt
+              else
+                echo "  - (none listed)"
+              fi
+            fi
+            echo
+            echo "## Benchmark Manifest Parity"
+            if [ "${{ steps.manifest.outputs.present }}" != "true" ]; then
+              echo "- Manifest: not found (skipping)"
+            else
+              echo "- Manifest: present at \`benchmarks/benchmark_manifest.json\`"
+              echo
+              echo "### Matches"
+              echo "| Source | Repo path | Status |"
+              echo "|---|---|---|"
+              [ -s ok.tbl ] && cat ok.tbl || echo "| — | — | — |"
+              echo
+              echo "### Hash differences"
+              echo "| Source | Repo path | Status |"
+              echo "|---|---|---|"
+              [ -s diff.tbl ] && cat diff.tbl || echo "| — | — | — |"
+              echo
+              echo "### Missing"
+              echo "| Source | Expected path | Status |"
+              echo "|---|---|---|"
+              [ -s miss.tbl ] && cat miss.tbl || echo "| — | — | — |"
+              echo
+              echo "### Alternative path matches"
+              echo "| Source | Found | Status |"
+              echo "|---|---|---|"
+              [ -s alt_ok.tbl ] && cat alt_ok.tbl || echo "| — | — | — |"
+              echo
+              echo "### Alternative path missing"
+              echo "| Source | Alternatives | Status |"
+              echo "|---|---|---|"
+              [ -s alt_miss.tbl ] && cat alt_miss.tbl || echo "| — | — | — |"
+            fi
+            echo
+            echo "## Submodules"
+            echo "- PraisonAI: \`${{ steps.submods.outputs.praison || 'no' }}\`"
+            echo "- Langroid: \`${{ steps.submods.outputs.langroid || 'no' }}\`"
+            echo "- CopilotKit: \`${{ steps.submods.outputs.copilotkit || 'no' }}\`"
+            echo
+            echo "<details><summary>git submodule status</summary>"
+            echo
+            echo '```'
+            [ -s submodules.txt ] && cat submodules.txt || echo "(none)"
+            echo '```'
+            echo "</details>"
+            echo
+            echo "## Open PRs — readiness"
+            echo "### Ready to merge"
+            cat prs_ready.txt
+            echo
+            echo "### Needs update (behind base)"
+            cat prs_behind.txt
+            echo
+            echo "### Blocked / Pending"
+            cat prs_blocked.txt
+            echo
+            echo "### Drafts"
+            cat prs_drafts.txt
+            echo
+            echo "> Tip: label ready PRs with \`automerge\` and let your auto-merge workflow/merge-queue finish them."
+          } > report.md
+
+          cat report.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Publish report to an Issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TITLE="Operational Status Report"
+          # reuse existing issue if present
+          NUM=$(gh issue list --state open --search "$TITLE" --json number,title --jq '.[0].number' || true)
+          if [ -n "$NUM" ]; then
+            gh issue comment "$NUM" --body-file report.md
+          else
+            gh issue create --title "$TITLE" --body-file report.md
+          fi
