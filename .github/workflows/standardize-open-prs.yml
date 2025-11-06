@@ -1,0 +1,116 @@
+name: Standardize open PRs
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "If true, show what would change without updating PRs"
+        required: false
+        default: 'true'
+      default_type:
+        description: "Conventional commit type to prepend if missing"
+        required: false
+        default: 'chore'
+      label:
+        description: "Label to apply to standardized PRs"
+        required: false
+        default: 'standardised'
+
+jobs:
+  run:
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Standardize all open PRs
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const dryRun = core.getInput('dry_run') === 'true';
+            const defaultType = core.getInput('default_type') || 'chore';
+            const label = core.getInput('label') || 'standardised';
+            const { owner, repo } = context.repo;
+
+            // List all open PRs
+            const prs = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: 'open', per_page: 100
+            });
+
+            const typeRe = /^(feat|fix|docs|chore|refactor|test|ci)(\(.+?\))?:\s/;
+            let changed = 0;
+
+            for (const pr of prs) {
+              const number = pr.number;
+              const originalTitle = (pr.title || '').trim();
+              const originalBody = pr.body || '';
+              const labels = (pr.labels || []).map(l => typeof l === 'string' ? l : l.name);
+
+              // Enforce conventional-style title if missing a type prefix
+              const newTitle = typeRe.test(originalTitle)
+                ? originalTitle
+                : `${defaultType}: ${originalTitle}`;
+
+              // Ensure body contains Summary + Checklist sections
+              const hasSummary = /(^|\n)##\s*Summary/i.test(originalBody);
+              const hasChecklist = /(^|\n)##\s*Checklist/i.test(originalBody);
+              let newBody = originalBody;
+              if (!hasSummary || !hasChecklist) {
+                const original = originalBody.trim() ? originalBody.trim() : '_No description provided_';
+                newBody = [
+                  '## Summary',
+                  original,
+                  '',
+                  '## Checklist',
+                  '- [ ] Tests added/updated',
+                  '- [ ] Documentation updated',
+                  '- [ ] Lint passes',
+                  '- [ ] Linked issue(s)',
+                  ''
+                ].join('\n');
+              }
+
+              const needsLabel = !labels.includes(label);
+              const willUpdateTitle = newTitle !== originalTitle;
+              const willUpdateBody = newBody !== originalBody;
+
+              core.info(`PR #${number}: ${originalTitle}`);
+              if (willUpdateTitle) core.info(`  ↳ title -> "${newTitle}"`);
+              if (willUpdateBody) core.info(`  ↳ body -> standardized template`);
+              if (needsLabel) core.info(`  ↳ add label: ${label}`);
+
+              if (!dryRun) {
+                // Update PR title/body if needed
+                if (willUpdateTitle || willUpdateBody) {
+                  await github.rest.pulls.update({
+                    owner, repo, pull_number: number,
+                    title: willUpdateTitle ? newTitle : undefined,
+                    body: willUpdateBody ? newBody : undefined
+                  });
+                }
+                // Apply label if needed
+                if (needsLabel) {
+                  await github.rest.issues.addLabels({
+                    owner, repo, issue_number: number, labels: [label]
+                  });
+                }
+              }
+
+              if (willUpdateTitle || willUpdateBody || needsLabel) changed++;
+            }
+
+            // Summarize
+            core.summary
+              .addHeading('Standardize open PRs')
+              .addTable([
+                [{data: 'Open PRs', header: true}, {data: String(prs.length)}],
+                [{data: 'Changed', header: true}, {data: String(changed)}],
+                [{data: 'Dry run', header: true}, {data: String(dryRun)}]
+              ])
+              .write();
+
+            if (dryRun) {
+              core.warning('Dry run enabled — no PRs were modified. Re-run with dry_run=false to apply changes.');
+            }
