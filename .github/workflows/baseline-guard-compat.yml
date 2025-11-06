@@ -8,6 +8,9 @@ on:
   merge_group:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   verifyExpected:
     # IMPORTANT: Job name must be exactly "verifyExpected"
