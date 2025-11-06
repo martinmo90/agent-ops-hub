@@ -1,0 +1,179 @@
+name: List Open PRs (Merge Readiness)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (shallow)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Generate merge readiness report
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo  = context.repo.repo;
+
+            // Fetch all open PRs (paginated)
+            const prs = await github.paginate(
+              github.rest.pulls.list,
+              { owner, repo, state: 'open', per_page: 100 }
+            );
+
+            // Helper: sleep
+            const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+            // Helpers to compute checks status for a SHA
+            async function getChecksSummary(sha) {
+              // Check Runs (GitHub Checks API)
+              const checks = await github.request('GET /repos/{owner}/{repo}/commits/{ref}/check-runs', {
+                owner, repo, ref: sha, per_page: 100,
+                headers: { 'Accept': 'application/vnd.github+json' }
+              });
+              const runs = checks.data.check_runs || [];
+              const totalRuns = runs.length;
+              const failedRuns = runs.filter(r => r.conclusion === 'failure' || r.conclusion === 'timed_out' || r.conclusion === 'cancelled' || r.conclusion === 'action_required').length;
+              const pendingRuns = runs.filter(r => r.status !== 'completed').length;
+              const runsOk = totalRuns > 0 && failedRuns === 0 && pendingRuns === 0;
+
+              // Combined Status (legacy Status API)
+              const status = await github.request('GET /repos/{owner}/{repo}/commits/{ref}/status', {
+                owner, repo, ref: sha
+              });
+              const state = status.data.state; // success | failure | pending | error | null
+              const contexts = status.data.statuses || [];
+              const statusesFailed = state === 'failure' || state === 'error';
+              const statusesPending = state === 'pending';
+              const statusesOk = state === 'success' || (contexts.length === 0 && totalRuns > 0 && runsOk);
+
+              // Final verdicts
+              const anyPending = pendingRuns > 0 || statusesPending;
+              const anyFailed = failedRuns > 0 || statusesFailed;
+
+              return {
+                totalRuns,
+                failedRuns,
+                pendingRuns,
+                contextsCount: contexts.length,
+                state,
+                runsOk,
+                statusesOk,
+                anyPending,
+                anyFailed,
+                allGreen: !anyPending && !anyFailed && (runsOk || statusesOk)
+              };
+            }
+
+            // For each PR, ensure mergeable_state is computed (may be null on first read)
+            async function inflatePR(prNumber) {
+              let detail;
+              for (let i = 0; i < 4; i++) {
+                detail = await github.rest.pulls.get({ owner, repo, pull_number: prNumber });
+                if (detail.data.mergeable_state !== null) break;
+                await sleep(1500);
+              }
+              return detail.data;
+            }
+
+            // Optionally fetch GraphQL merge state for extra signal
+            async function getGraphQLState(prNumber) {
+              const q = `query($owner:String!, $repo:String!, $number:Int!){
+                repository(owner:$owner, name:$repo){
+                  pullRequest(number:$number){
+                    isDraft
+                    mergeStateStatus        # CLEAN, BLOCKED, BEHIND, DIRTY, UNKNOWN, UNSTABLE
+                    reviewDecision          # APPROVED, REVIEW_REQUIRED, CHANGES_REQUESTED, null
+                    autoMergeRequest { enabledAt }
+                  }
+                }
+              }`;
+              try {
+                const data = await github.graphql(q, { owner, repo, number: prNumber });
+                return data.repository.pullRequest;
+              } catch (e) {
+                return null;
+              }
+            }
+
+            const ready = [];
+            const needsUpdate = [];
+            const blocked = [];
+            const drafts = [];
+
+            for (const pr of prs) {
+              // Skip closed (we fetched open only, but be safe)
+              if (pr.state !== 'open') continue;
+
+              const detail = await inflatePR(pr.number);
+              const gql = await getGraphQLState(pr.number);
+              const mergeableState = (detail.mergeable_state || '').toLowerCase(); // clean, blocked, behind, dirty, unstable, unknown
+              const isDraft = detail.draft || (gql ? gql.isDraft : false);
+
+              // Checks on head SHA
+              const checks = await getChecksSummary(detail.head.sha);
+
+              // Categorize
+              if (isDraft) {
+                drafts.push({ pr: detail, mergeableState, checks });
+                continue;
+              }
+
+              // Prefer GraphQL mergeStateStatus if available
+              const gqlState = (gql && gql.mergeStateStatus) ? gql.mergeStateStatus.toLowerCase() : null;
+              const state = gqlState || mergeableState;
+
+              const isClean = (state === 'clean');
+              const isBehind = (state === 'behind');
+              const isBlockedish = ['blocked','dirty','unstable','unknown'].includes(state);
+
+              if (isClean && checks.allGreen) {
+                ready.push({ pr: detail, state, checks, gql });
+              } else if (isBehind) {
+                needsUpdate.push({ pr: detail, state, checks, gql });
+              } else {
+                blocked.push({ pr: detail, state, checks, gql });
+              }
+            }
+
+            // Compose markdown
+            function prRow(x) {
+              const labels = (x.pr.labels || []).map(l => `\`${l.name}\``).join(' ');
+              const checksEmoji = x.checks.allGreen ? '✅' : (x.checks.anyPending ? '⏳' : '❌');
+              return `| #${x.pr.number} | [${x.pr.title}](${x.pr.html_url}) | ${x.state || x.mergeableState} | ${checksEmoji} | ${x.pr.user.login} | ${labels || '(none)'} |`;
+            }
+
+            function section(title, arr) {
+              let s = `\n### ${title}\n\n| PR | Title | Merge State | Checks | Author | Labels |\n|---:|---|---|---|---|---|\n`;
+              if (arr.length === 0) s += `| — | — | — | — | — | — |\n`;
+              for (const x of arr) s += prRow(x) + '\n';
+              return s;
+            }
+
+            const now = new Date().toISOString().replace('T',' ').replace('Z',' UTC');
+            let md = `## Open PRs — Merge Readiness (${now})\n`;
+            md += section('Ready to merge now (clean + all checks green)', ready);
+            md += section('Needs update (behind base branch)', needsUpdate);
+            md += section('Blocked / Pending / Unstable', blocked);
+            md += section('Drafts', drafts);
+
+            core.summary.addRaw(md).write();
+
+            // Also post a PR comment when triggered from a PR context
+            if (context.payload.pull_request && context.payload.pull_request.number) {
+              await github.rest.issues.createComment({
+                owner, repo,
+                issue_number: context.payload.pull_request.number,
+                body: md
+              }).catch(() => {});
+            }
