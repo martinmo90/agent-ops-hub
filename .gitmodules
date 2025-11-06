@@ -1,3 +1,6 @@
 [submodule "apps/shadcn-chatbot-kit"]
 	path = apps/shadcn-chatbot-kit
 	url = https://github.com/Blazity/shadcn-chatbot-kit.git
+[submodule "vendor/CopilotKit"]
+	path = vendor/CopilotKit
+	url = https://github.com/CopilotKit/CopilotKit.git
