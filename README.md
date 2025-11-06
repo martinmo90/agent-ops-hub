@@ -137,6 +137,8 @@ agent-ops-hub/
 
 Automated CI workflow that verifies the presence and validity of baseline files on every PR.
 
+For details on agent file creation verification, see [docs/cursor-check.md](docs/cursor-check.md).
+
 ### Baseline Files
 
 The following files are protected:
