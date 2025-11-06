@@ -19,29 +19,26 @@ jobs:
             exit 1
           fi
           
-          # Install jq if needed
-          if ! command -v jq &> /dev/null; then
-            sudo apt-get update -q
-            sudo apt-get install -y jq
-          fi
-          
-          # Extract baseline file paths from manifest.json
+          # Extract baseline file paths from manifest.json (jq is pre-installed on ubuntu-latest)
           BASELINE_FILES=$(jq -r '.artifacts[].path' manifest.json)
           
-          if [ -z "$BASELINE_FILES" ]; then
+          # Check if any baseline files were found
+          if [ -z "$(echo "$BASELINE_FILES" | tr -d '[:space:]')" ]; then
             echo "::warning::No baseline files found in manifest.json"
           fi
           
-          # Check each baseline file
+          # Check each baseline file (IFS set to handle paths correctly)
           MISSING_FILES=()
-          for file in $BASELINE_FILES; do
-            if [ -f "$file" ]; then
-              echo "✓ $file exists"
-            else
-              echo "::error::Missing baseline file: $file"
-              MISSING_FILES+=("$file")
+          while IFS= read -r file; do
+            if [ -n "$file" ]; then
+              if [ -f "$file" ]; then
+                echo "✓ $file exists"
+              else
+                echo "::error::Missing baseline file: $file"
+                MISSING_FILES+=("$file")
+              fi
             fi
-          done
+          done <<< "$BASELINE_FILES"
           
           # Fail if any files are missing
           if [ ${#MISSING_FILES[@]} -ne 0 ]; then
