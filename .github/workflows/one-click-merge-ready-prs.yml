@@ -1,0 +1,208 @@
+name: One-Click Merge Ready PRs
+
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "Target base branch"
+        default: "main"
+        required: true
+      mode:
+        description: "Run mode: report only or merge"
+        type: choice
+        default: "merge"
+        options:
+          - report
+          - merge
+      require_label:
+        description: "Only merge PRs with this label (empty = no label required)"
+        default: "automerge"
+      max_to_merge:
+        description: "Max number of PRs to merge this run"
+        default: "20"
+      max_files:
+        description: "Size gate: max changed files"
+        default: "10"
+      max_changes:
+        description: "Size gate: max total additions+deletions"
+        default: "500"
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+  statuses: read
+
+jobs:
+  scan-and-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Scan open PRs and (optionally) merge ready ones
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const core = require('@actions/core');
+            const mode = core.getInput('mode');
+            const base = core.getInput('base');
+            const requireLabel = core.getInput('require_label') || '';
+            const MAX = parseInt(core.getInput('max_to_merge'), 10);
+            const MAX_FILES = parseInt(core.getInput('max_files'), 10);
+            const MAX_CHANGES = parseInt(core.getInput('max_changes'), 10);
+
+            const owner = context.repo.owner;
+            const repo  = context.repo.repo;
+
+            // Helper: wait & refetch PR until mergeable_state is computed
+            const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+            async function inflatePR(num) {
+              let pr;
+              for (let i = 0; i < 6; i++) {
+                pr = (await github.rest.pulls.get({ owner, repo, pull_number: num })).data;
+                if (pr.mergeable_state !== null) break;
+                await sleep(1500);
+              }
+              return pr;
+            }
+
+            // Helper: summarize checks on a SHA
+            async function checksSummary(sha) {
+              // Combined Status (legacy API)
+              const status = await github.rest.repos.getCombinedStatusForRef({ owner, repo, ref: sha });
+              const state = status.data.state; // success|failure|pending|error
+              const contexts = status.data.statuses || [];
+              const statusesFailed = state === 'failure' || state === 'error';
+              const statusesPending = state === 'pending';
+
+              // Checks API
+              const runs = (await github.request('GET /repos/{owner}/{repo}/commits/{ref}/check-runs', {
+                owner, repo, ref: sha, per_page: 100
+              })).data.check_runs || [];
+              const pendingRuns = runs.filter(r => r.status !== 'completed').length;
+              const failedRuns = runs.filter(r => r.conclusion && !['success','neutral','skipped'].includes(r.conclusion)).length;
+
+              const anyPending = statusesPending || pendingRuns > 0;
+              const anyFailed = statusesFailed || failedRuns > 0;
+              const allGreen  = !anyPending && !anyFailed && (contexts.length + runs.length >= 0);
+              return { state, contexts: contexts.length, runs: runs.length, anyPending, anyFailed, allGreen };
+            }
+
+            // Fetch all open PRs targeting the chosen base
+            const prs = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: 'open', base, per_page: 100
+            });
+
+            // Evaluate each PR
+            const report = [];
+            const ready = [];
+            const behind = [];
+            const blocked = [];
+            const drafts = [];
+
+            for (const pr of prs) {
+              const num = pr.number;
+              const prInflated = await inflatePR(num);
+
+              const files = await github.paginate(github.rest.pulls.listFiles, { owner, repo, pull_number: num, per_page: 100 });
+              const fileCount = files.length;
+              const totalChanges = files.reduce((s,f) => s + (f.additions || 0) + (f.deletions || 0), 0);
+
+              const labels = (pr.labels || []).map(l => l.name);
+              const labelOK = requireLabel ? labels.includes(requireLabel) : true;
+
+              const chk = await checksSummary(prInflated.head.sha);
+
+              const state = (prInflated.mergeable_state || 'unknown').toLowerCase(); // clean, behind, blocked, dirty, unstable, unknown
+              const isDraft = !!prInflated.draft;
+
+              const sizeOK = fileCount <= MAX_FILES && totalChanges <= MAX_CHANGES;
+              const checksOK = chk.allGreen;
+              const cleanish = ['clean','unstable','has_hooks'].includes(state);
+
+              const readyToMerge = !isDraft && labelOK && sizeOK && checksOK && cleanish;
+
+              const row = {
+                number: num,
+                title: prInflated.title,
+                url: prInflated.html_url,
+                author: prInflated.user.login,
+                state,
+                draft: isDraft,
+                labelOK,
+                sizeOK,
+                fileCount,
+                totalChanges,
+                checks: chk,
+              };
+              report.push(row);
+
+              if (isDraft) {
+                drafts.push(row);
+              } else if (readyToMerge) {
+                ready.push(row);
+              } else if (state === 'behind') {
+                behind.push(row);
+              } else {
+                blocked.push(row);
+              }
+            }
+
+            // Optional merge
+            let merged = 0;
+            if (mode === 'merge') {
+              for (const r of ready) {
+                if (merged >= MAX) break;
+                try {
+                  const res = await github.rest.pulls.merge({
+                    owner, repo, pull_number: r.number, merge_method: 'squash'
+                  });
+                  if (res.status === 200 && res.data.merged) {
+                    merged++;
+                    // Comment success
+                    await github.rest.issues.createComment({
+                      owner, repo, issue_number: r.number,
+                      body: `✅ Merged by **One-Click Merge Ready PRs**.`
+                    }).catch(() => {});
+                  }
+                } catch (e) {
+                  await github.rest.issues.createComment({
+                    owner, repo, issue_number: r.number,
+                    body: `⚠️ Merge attempt failed: \`${e.message}\``
+                  }).catch(() => {});
+                }
+              }
+            }
+
+            // Build summary
+            function table(title, arr) {
+              let s = `\n### ${title}\n\n| PR | Title | State | Draft | Label OK | Size OK | Checks | Files/Changes |\n|---:|---|---|:---:|:---:|:---:|:---:|---|\n`;
+              if (arr.length === 0) return s + `| — | — | — | — | — | — | — | — |\n`;
+              for (const x of arr) {
+                const checksEmoji = x.checks.allGreen ? '✅' : (x.checks.anyPending ? '⏳' : '❌');
+                s += `| #${x.number} | [${x.title}](${x.url}) | ${x.state} | ${x.draft ? 'Yes' : 'No'} | ${x.labelOK ? '✅' : '❌'} | ${x.sizeOK ? '✅' : '❌'} | ${checksEmoji} | ${x.fileCount}/${x.totalChanges} |\n`;
+              }
+              return s;
+            }
+
+            const now = new Date().toISOString().replace('T',' ').replace('Z',' UTC');
+            let md = `## One-Click Merge Ready PRs — ${mode.toUpperCase()} (${now})\n`;
+            md += `- Base branch: \`${base}\`\n`;
+            md += `- Require label: \`${requireLabel || '(none)'}\`\n`;
+            md += `- Size gate: files ≤ ${MAX_FILES}, changes ≤ ${MAX_CHANGES}\n`;
+            md += `- Ready count: ${ready.length} | Merged this run: ${merged}\n`;
+            md += table('Ready to merge', ready);
+            md += table('Needs update (behind base)', behind);
+            md += table('Blocked / Pending', blocked);
+            md += table('Drafts', drafts);
+
+            core.summary.addRaw(md).write();
+
+            // Also post a repo issue comment summary (optional best effort)
+            try {
+              await github.rest.issues.create({
+                owner, repo,
+                title: `One-Click Merge summary (${now})`,
+                body: md
+              });
+            } catch (e) {
+              core.warning(`Could not create summary issue: ${e.message}`);
+            }
