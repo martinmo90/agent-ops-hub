@@ -1,0 +1,39 @@
+name: Required Checks Audit
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Default branch & required checks
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY%/*}"
+          repo="${GITHUB_REPOSITORY#*/}"
+          def=$(gh api repos/$owner/$repo --jq .default_branch)
+          echo "Default branch: $def" >> $GITHUB_STEP_SUMMARY
+          if gh api repos/$owner/$repo/branches/$def/protection > bp.json 2>/dev/null; then
+            echo "### Required status checks (contexts)" >> $GITHUB_STEP_SUMMARY
+            jq -r '.required_status_checks.checks[]?.context' bp.json | sed 's/^/- `&`/' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No branch protection set on default branch." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Recent workflow runs & job names (for mapping)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "### Recent workflows / jobs" >> $GITHUB_STEP_SUMMARY
+          runs=$(gh api repos/${GITHUB_REPOSITORY}/actions/runs --jq '.workflow_runs[:10][] | [.id,.name] | @tsv')
+          while IFS=$'\t' read -r run_id wf_name; do
+            echo "- ${wf_name}" >> $GITHUB_STEP_SUMMARY
+            gh api repos/${GITHUB_REPOSITORY}/actions/runs/$run_id/jobs --jq '.jobs[].name' | sed 's/^/  • /' >> $GITHUB_STEP_SUMMARY || true
+          done <<< "$runs"

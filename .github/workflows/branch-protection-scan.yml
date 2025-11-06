@@ -1,31 +1,70 @@
-name: Branch Protection Scan
+# Purpose: Reliably read branch-protection and list required checks from a trusted context.
+# Runs on pull_request_target (base repo) and can be run manually.
 
+name: Branch Protection Scan
 on:
-  pull_request:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to inspect (default = default branch)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
-  pull-requests: write
+  pull-requests: read
+  administration: read
 
 jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Ensure jq (if missing)
-        run: |
-          if ! command -v jq >/dev/null; then
-            sudo apt-get update -y
-            sudo apt-get install -y jq
-          fi
-
-      - name: Run scan
+      - name: Resolve target branch
+        id: resolve
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          bash scripts/branch_protection_scan.sh
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY%/*}"
+          repo="${GITHUB_REPOSITORY#*/}"
+          default_branch=$(gh api repos/$owner/$repo --jq .default_branch)
+          sel="${{ inputs.branch }}"
+          branch="${sel:-$default_branch}"
+          echo "owner=$owner" >> $GITHUB_OUTPUT
+          echo "repo=$repo" >> $GITHUB_OUTPUT
+          echo "branch=$branch" >> $GITHUB_OUTPUT
+
+      - name: Fetch protection JSON
+        id: fetch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh api repos/${{ steps.resolve.outputs.owner }}/${{ steps.resolve.outputs.repo }}/branches/${{ steps.resolve.outputs.branch }}/protection > bp.json 2>/dev/null; then
+            echo "protected=true" >> $GITHUB_OUTPUT
+          else
+            echo "protected=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Summarize protection (if present)
+        if: steps.fetch.outputs.protected == 'true'
+        run: |
+          set -euo pipefail
+          strict=$(jq -r '.required_status_checks.strict // false' bp.json)
+          echo "## Branch protection (on ${{ steps.resolve.outputs.branch }})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Protected: \`true\`" >> $GITHUB_STEP_SUMMARY
+          echo "Strict up-to-date: \`$strict\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Required status checks (contexts)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          jq -r '.required_status_checks.checks[]?.context' bp.json | sed 's/^/- `&`/' >> $GITHUB_STEP_SUMMARY || echo "- (none listed)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Not protected summary
+        if: steps.fetch.outputs.protected != 'true'
+        run: |
+          echo "## Branch protection" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Protected: \`false\`" >> $GITHUB_STEP_SUMMARY
