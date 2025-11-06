@@ -22,7 +22,7 @@ STRICT_UP_TO_DATE="$(echo "$PROT_JSON" | jq -r '.required_status_checks.strict /
 REQUIRED_CONTEXTS="$(echo "$PROT_JSON" | jq -r '.required_status_checks.contexts // [] | join(", ")')"
 
 # Expected checks (adjust names to match your jobs if needed)
-NEED_BG="Baseline Guard / verify"
+NEED_BG="Baseline Guard / verifyExpected"
 NEED_SIZE="pr-size-gate"
 NEED_SMOKE="os-smoke"  # job name from os-smoke-artifact workflow; change if different
 
@@ -48,7 +48,7 @@ read -r -d '' REPORT <<EOF
 **Required checks configured:** \`${CAT_REQ_CTX}\`
 
 **Expected checks present?**
-- Baseline Guard / verify: \`$HAS_BG\`
+- Baseline Guard / verifyExpected: \`$HAS_BG\`
 - PR size gate (pr-size-gate): \`$HAS_SIZE\`
 - OS smoke job (os-smoke): \`$HAS_SMOKE\`
 
