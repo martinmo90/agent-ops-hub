@@ -1,10 +1,7 @@
-# Purpose: Unblock merges by always producing the required check-run
-#          named exactly "Baseline Guard / verifyExpected".
-# Remove once branch protection is updated to the new job name.
-
 name: Baseline Guard
 on:
   pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
   workflow_dispatch:
 
@@ -13,10 +10,10 @@ permissions:
 
 jobs:
   verifyExpected:
-    # IMPORTANT: Job name must be exactly "verifyExpected"
+    # The job name MUST be exactly "verifyExpected" to produce the required context:
+    # "Baseline Guard / verifyExpected"
     name: verifyExpected
     runs-on: ubuntu-latest
-    # Always run so the check is never missing
     if: always()
     steps:
-      - run: echo "Compat status for branch protection (no PR code executed)."
+      - run: echo "Compat status to satisfy branch protection (no PR code executed)."

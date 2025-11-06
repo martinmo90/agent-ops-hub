@@ -1,31 +1,54 @@
 name: Branch Protection Scan
-
 on:
-  pull_request:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
   contents: read
-  pull-requests: write
+  pull-requests: read
+  administration: read
+  actions: read
 
 jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Ensure jq (if missing)
+      - name: Ensure tools
         run: |
-          if ! command -v jq >/dev/null; then
-            sudo apt-get update -y
-            sudo apt-get install -y jq
-          fi
+          sudo apt-get update -y
+          sudo apt-get install -y jq
 
-      - name: Run scan
+      - name: Report required status checks for the default branch
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          bash scripts/branch_protection_scan.sh
+          set -euo pipefail
+          OWNER="${GITHUB_REPOSITORY%/*}"
+          REPO="${GITHUB_REPOSITORY#*/}"
+          DEF=$(gh api repos/$OWNER/$REPO --jq .default_branch)
+          echo "Default branch: $DEF" | tee -a $GITHUB_STEP_SUMMARY
+
+          if gh api repos/$OWNER/$REPO/branches/$DEF/protection > bp.json 2>/dev/null; then
+            echo "## Branch protection on \`$DEF\`: configured" >> $GITHUB_STEP_SUMMARY
+            STRICT=$(jq -r '.required_status_checks.strict // false' bp.json)
+            echo "- Strict up-to-date: \`$STRICT\`" >> $GITHUB_STEP_SUMMARY
+            echo "- Required checks:" >> $GITHUB_STEP_SUMMARY
+            (jq -r '.required_status_checks.checks[]?.context' bp.json || true) | sort -u | awk '{print "  - `" $0 "`"}' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## Branch protection on \`$DEF\`: not configured" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: (PR context) comment summary
+        if: github.event_name == 'pull_request_target'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync(process.env.GITHUB_STEP_SUMMARY, 'utf8');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body
+            });
