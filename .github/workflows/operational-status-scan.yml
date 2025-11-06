@@ -89,7 +89,7 @@ jobs:
             echo "EOF" >> $GITHUB_OUTPUT
             # booleans
             STRICT=$(jq -r '.required_status_checks.strict // false' bp.json)
-            REQ_PR=$([ "$(jq -e 'has("required_pull_request_reviews")' bp.json >/dev/null 2>&1; echo $?)" = 0 ] && echo true || echo false)
+            REQ_PR=$(jq -r 'has("required_pull_request_reviews")' bp.json 2>/dev/null || echo false)
             echo "strict_up_to_date=$STRICT" >> $GITHUB_OUTPUT
             echo "require_pr=$REQ_PR" >> $GITHUB_OUTPUT
           fi
@@ -159,7 +159,7 @@ jobs:
           if [ "${{ inputs.verify_submodules }}" = "true" ]; then
             git submodule update --init --recursive || true
           fi
-          git submodule status || true > submodules.txt
+          git submodule status > submodules.txt || true
 
       - name: Open PRs — readiness scan
         id: prs
