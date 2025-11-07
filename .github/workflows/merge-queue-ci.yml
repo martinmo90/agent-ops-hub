@@ -1,0 +1,20 @@
+name: Merge Queue CI
+
+on:
+  # runs when a PR is in GitHub's merge queue (if you enable it)
+  merge_group:
+  # run on PRs so the context appears in the picker and gates PRs
+  pull_request:
+    types: [opened, synchronize, reopened]
+  # manual seed/debug
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "merge-queue smoke ok"
