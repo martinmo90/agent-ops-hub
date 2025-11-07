@@ -1,0 +1,99 @@
+name: Required Checks Audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "Branch to audit (leave blank to use repo default)"
+        required: false
+        default: ""
+
+# avoid duplicate runs if someone clicks twice
+concurrency:
+  group: required-checks-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Audit required checks vs recent contexts
+        uses: actions/github-script@v7
+        env:
+          BASE: ${{ inputs.base }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo  = context.repo.repo;
+
+            // Resolve base branch
+            let base = (process.env.BASE || "").trim();
+            if (!base) {
+              const { data: info } = await github.rest.repos.get({ owner, repo });
+              base = info.default_branch;
+            }
+
+            // Branch protection & required contexts
+            let bp = { protected:false, strict:'unknown', contexts:[] };
+            try {
+              const { data } = await github.request(
+                'GET /repos/{owner}/{repo}/branches/{branch}/protection',
+                { owner, repo, branch: base }
+              );
+              bp.protected = true;
+              bp.strict = data?.required_status_checks?.strict ?? 'unknown';
+              bp.contexts = [...new Set((data?.required_status_checks?.checks || [])
+                               .map(c => c.context).filter(Boolean))];
+            } catch {
+              bp.protected = false; // not configured or no access
+            }
+
+            // Build recent “workflow / job” contexts from Actions runs
+            const runs = await github.paginate(
+              github.rest.actions.listWorkflowRunsForRepo,
+              { owner, repo, per_page: 20 }
+            );
+            const contexts = new Set();
+            for (const r of runs) {
+              const jobs = await github.paginate(
+                github.rest.actions.listJobsForWorkflowRun,
+                { owner, repo, run_id: r.id, per_page: 50 }
+              );
+              for (const j of jobs) contexts.add(`${r.name} / ${j.name}`);
+            }
+            const recent = [...contexts].sort();
+
+            // Diff
+            const req = new Set(bp.contexts);
+            const recentSet = new Set(recent);
+            const missingInRecent = bp.contexts.filter(c => !recentSet.has(c)).sort();
+            const notRequired     = recent.filter(c => !req.has(c));
+
+            // Summary
+            let md = `# Required Checks Audit\n\n`;
+            md += `**Base branch:** \`${base}\`\n\n`;
+            if (!bp.protected) {
+              md += `- Branch protection on **${base}**: ❌ not configured\n\n`;
+            } else {
+              md += `- Branch protection on **${base}**: ✅ configured\n`;
+              md += `- Strict up-to-date: \`${bp.strict}\`\n`;
+              md += `- **Required contexts (${bp.contexts.length})**:\n`;
+              md += bp.contexts.length ? bp.contexts.map(c=>`  - \`${c}\``).join('\n') : '  - (none)'; md += '\n\n';
+            }
+
+            md += `## Recent Action contexts (workflow / job)\n`;
+            md += recent.length ? recent.map(c=>`- \`${c}\``).join('\n') : '- (none)'; md += '\n\n';
+
+            md += `## Diff\n`;
+            md += `- **Required but not seen recently** (${missingInRecent.length}):\n`;
+            md += missingInRecent.length ? missingInRecent.map(c=>`  - \`${c}\``).join('\n') : '  - (none)'; md += '\n';
+            md += `- **Seen recently but not required** (${notRequired.length}):\n`;
+            md += notRequired.length ? notRequired.map(c=>`  - \`${c}\``).join('\n') : '  - (none)'; md += '\n';
+
+            md += `\n> Branch Protection must use the **exact** context strings emitted by Actions (usually \`<workflow> / <job>\`).\n`;
+
+            await core.summary.addRaw(md).write();
