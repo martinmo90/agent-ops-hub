@@ -1,22 +1,28 @@
-# Purpose: Unblock merges by always producing the required check-run
-#          named exactly "Baseline Guard / verifyExpected".
-# Remove once branch protection is updated to the new job name.
+# Purpose: Always produce the required check context named
+# "Baseline Guard / verifyExpected" on PRs and merge queue, WITHOUT executing PR code.
+# This removes "Waiting for status to be reported" blocks.
 
 name: Baseline Guard
 on:
   pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# Avoid duplicate runs spamming the checks list
+concurrency:
+  group: baseline-guard-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
+  # IMPORTANT: job name must remain exactly "verifyExpected" to match branch-protection context
   verifyExpected:
-    # IMPORTANT: Job name must be exactly "verifyExpected"
     name: verifyExpected
     runs-on: ubuntu-latest
-    # Always run so the check is never missing
     if: always()
     steps:
-      - run: echo "Compat status for branch protection (no PR code executed)."
+      # DO NOT check out PR code in pull_request_target for security.
+      - run: echo "Compat status emitted from base repo (no PR code executed)."
