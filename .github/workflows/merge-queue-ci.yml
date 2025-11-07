@@ -1,20 +1,27 @@
 name: Merge Queue CI
+run-name: "${{ github.workflow }} — ${{ github.event_name == 'pull_request' && format('#{0}', github.event.pull_request.number) || github.ref_name }}"
 
 on:
-  # runs when a PR is in GitHub's merge queue (if you enable it)
+  # Runs when GitHub Merge Queue validates a batch for main
   merge_group:
-  # run on PRs so the context appears in the picker and gates PRs
+  # Also run on PRs so the status context appears in the picker
   pull_request:
     types: [opened, synchronize, reopened]
-  # manual seed/debug
+  # Manual run for testing
   workflow_dispatch:
 
 permissions:
   contents: read
+
+# Cancel duplicate runs for the same PR/ref
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   smoke:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: echo "merge-queue smoke ok"
+      - name: Smoke
+        run: echo "merge-queue smoke ok"
