@@ -3,6 +3,7 @@
 # Remove once branch protection is updated to the new job name.
 
 name: Baseline Guard
+run-name: "${{ github.workflow }} — ${{ github.event_name == 'pull_request' && format('#{0}', github.event.pull_request.number) || github.ref_name }}"
 on:
   pull_request_target:
   merge_group:
@@ -10,6 +11,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   verifyExpected:
