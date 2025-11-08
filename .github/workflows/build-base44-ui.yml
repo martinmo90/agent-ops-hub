@@ -1,0 +1,74 @@
+name: Build Base44 UI (zip → build → artifact)
+run-name: "${{ github.workflow }} — ${{ github.ref_name }}"
+on:
+  workflow_dispatch:
+    inputs:
+      app_id:
+        description: "Base44 APP_ID (optional; falls back to repo secret BASE44_APP_ID)"
+        required: false
+        default: ""
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: build-base44-ui-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Assert vendor zip exists
+        run: |
+          test -f vendor/base44-ui.zip || { echo "vendor/base44-ui.zip missing. Upload the Base44 zip to this path, then re-run."; exit 1; }
+
+      - name: Unzip to apps/base44-ui
+        run: |
+          rm -rf apps/base44-ui
+          mkdir -p apps/base44-ui
+          unzip -q vendor/base44-ui.zip -d apps/base44-ui
+          echo "Tree after unzip:"
+          find apps/base44-ui -maxdepth 2 -type f | sed -n '1,120p'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            apps/base44-ui/package-lock.json
+            apps/base44-ui/package.json
+
+      - name: Inject Base44 app id (env-aware)
+        working-directory: apps/base44-ui
+        env:
+          INPUT_APP_ID: ${{ inputs.app_id }}
+          SECRET_APP_ID: ${{ secrets.BASE44_APP_ID }}
+        run: |
+          APP_ID="${INPUT_APP_ID:-$SECRET_APP_ID}"
+          FILE=src/api/base44Client.js
+          if [ -f "$FILE" ]; then
+            node -e "let fs=require('fs');let s=fs.readFileSync('$FILE','utf8');\
+            s=s.replace(/export const base44 = createClient\(\{[\s\S]*?\}\);/m,\
+            'const appId = (import.meta?.env?.VITE_BASE44_APP_ID) || \"CHANGE_ME\";\nexport const base44 = createClient({ appId, requiresAuth: true });');\
+            fs.writeFileSync('$FILE',s)"
+          fi
+          if [ -n "$APP_ID" ]; then echo "VITE_BASE44_APP_ID=$APP_ID" > .env; fi
+
+      - name: Install & Build
+        working-directory: apps/base44-ui
+        run: |
+          npm ci
+          npm run build
+          ls -lah dist || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: base44-ui-dist
+          path: apps/base44-ui/dist
+          if-no-files-found: error
+          retention-days: 7

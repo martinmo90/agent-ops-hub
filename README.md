@@ -175,6 +175,23 @@ Branches with `claude/` prefix can be auto-merged by the auto-merge script when 
 ### Automation scripts
 
 - `scripts/auto_merge_claude.sh` - Auto-merge claude/* PRs when checks pass
+- `scripts/verify-base44-zip.sh` - Verify Base44 UI zip and build artifact for PRs
+
+## Base44 UI Build
+
+The repository includes a workflow and verification system for building Base44 UI applications from ZIP files.
+
+### Quick Start
+
+1. Upload your Base44 UI zip to `vendor/base44-ui.zip` in your PR branch
+2. Run the verification script:
+   ```bash
+   export GITHUB_TOKEN="your_token"
+   ./scripts/verify-base44-zip.sh <pr_number>
+   ```
+3. The script will check the zip, dispatch the build workflow, and post results to the PR
+
+See [docs/base44-ui-verification.md](docs/base44-ui-verification.md) for detailed documentation.
 
 ## License
 
