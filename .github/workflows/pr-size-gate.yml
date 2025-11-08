@@ -1,10 +1,14 @@
 name: PR Size Gate
+run-name: "${{ github.workflow }} — ${{ github.event_name == 'pull_request' && format('#{0}', github.event.pull_request.number) || github.ref_name }}"
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened, ready_for_review]
 permissions:
   contents: read
   pull-requests: write
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   size-gate:
     runs-on: ubuntu-latest
