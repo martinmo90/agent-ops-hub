@@ -1,4 +1,5 @@
 name: Required Checks Audit
+run-name: "${{ github.workflow }} — ${{ github.event_name == 'pull_request' && format('#{0}', github.event.pull_request.number) || github.ref_name }}"
 
 on:
   workflow_dispatch:
