@@ -1,0 +1,257 @@
+name: Ops — Seed Checks & Nightly Verify
+run-name: "${{ github.workflow }} — ${{ github.ref_name }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      threshold:
+        description: "PR Size Gate threshold (adds+deletes)"
+        default: "800"
+      fail_on_diff:
+        description: "Benchmark: fail when DIFF/MISSING"
+        default: "false"
+      verify_hashes:
+        description: "Benchmark: verify sha256"
+        default: "true"
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: ops-seed-and-nightly-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  seed-and-nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Seed checks (dispatch workflows) + Baseline Guard PR + Nightly demo
+        id: seed
+        uses: actions/github-script@v7
+        env:
+          THRESH: ${{ inputs.threshold }}
+          BENCH_FAIL: ${{ inputs.fail_on_diff }}
+          BENCH_VERIFY: ${{ inputs.verify_hashes }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo  = context.repo.repo;
+            const gh    = github;
+
+            // Resolve default branch
+            const { data: info } = await gh.rest.repos.get({ owner, repo });
+            const base = info.default_branch || "main";
+
+            // Helpers
+            const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+            async function dispatchWorkflow(workflow_path, inputs = {}) {
+              try {
+                await gh.request('POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches', {
+                  owner, repo, workflow_id: workflow_path, ref: base, inputs
+                });
+              } catch (e) {
+                return { workflow_path, error: `dispatch failed: ${e.message}` };
+              }
+
+              // Poll latest run for that workflow on base
+              let attempts = 0, run = null, lastId = null;
+              while (attempts < 60) { // ~5m
+                attempts++;
+                const { data } = await gh.request('GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs', {
+                  owner, repo, workflow_id: workflow_path, branch: base, per_page: 1
+                });
+                const r = data.workflow_runs?.[0];
+                if (r && r.id !== lastId) {
+                  lastId = r.id;
+                }
+                if (r && (r.status === 'completed' || r.conclusion)) {
+                  run = r; break;
+                }
+                await sleep(5000);
+              }
+              if (!run) {
+                // best effort: list again and return latest
+                const { data } = await gh.request('GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs', {
+                  owner, repo, workflow_id: workflow_path, branch: base, per_page: 1
+                });
+                run = data.workflow_runs?.[0] || null;
+              }
+              return { workflow_path, run };
+            }
+
+            async function baselineGuardSeed() {
+              // Create branch
+              const ts = Date.now().toString(36);
+              let head = `seed/baseline-guard-${ts}`;
+              const { data: ref } = await gh.rest.git.getRef({ owner, repo, ref: `heads/${base}` });
+              try {
+                await gh.rest.git.createRef({ owner, repo, ref: `refs/heads/${head}`, sha: ref.object.sha });
+              } catch (e) {
+                head += "-a";
+                await gh.rest.git.createRef({ owner, repo, ref: `refs/heads/${head}`, sha: ref.object.sha });
+              }
+
+              // Create file
+              const path = `seed/baseline-guard-${ts}.txt`;
+              await gh.rest.repos.createOrUpdateFileContents({
+                owner, repo, path, message: "chore: seed baseline guard", content: Buffer.from("seed\n").toString('base64'), branch: head
+              });
+
+              // Open PR
+              const { data: pr } = await gh.rest.pulls.create({
+                owner, repo, title: "chore: seed baseline guard (temp)",
+                head, base, body: "Temporary PR to trigger Baseline Guard / verify"
+              });
+
+              // Poll baseline-guard workflow on this branch
+              let attempts = 0, run = null;
+              while (attempts < 60) {
+                attempts++;
+                try {
+                  const { data } = await gh.request('GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs', {
+                    owner, repo, workflow_id: 'baseline-guard.yml', branch: head, per_page: 1
+                  });
+                  const r = data.workflow_runs?.[0];
+                  if (r && (r.status === 'completed' || r.conclusion)) { run = r; break; }
+                } catch (e) {
+                  // workflow may have a different filename; fallback: search all runs for this head branch
+                  const { data } = await gh.rest.actions.listWorkflowRunsForRepo({ owner, repo, per_page: 25, branch: head });
+                  const r = (data.workflow_runs || []).find(w => (w.name||'').toLowerCase().includes('baseline guard'));
+                  if (r && (r.status === 'completed' || r.conclusion)) { run = r; break; }
+                }
+                await sleep(5000);
+              }
+
+              // Close PR & delete branch
+              try { await gh.rest.pulls.update({ owner, repo, pull_number: pr.number, state: "closed" }); } catch {}
+              try { await gh.rest.git.deleteRef({ owner, repo, ref: `heads/${head}` }); } catch {}
+
+              return { pr, run };
+            }
+
+            async function nightlyRun() {
+              const candidates = ['.github/workflows/os-smoke-artifact.yml', '.github/workflows/os-demo-nightly.yml'];
+              let used = null, run = null;
+
+              for (const wf of candidates) {
+                try {
+                  await gh.request('POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches', {
+                    owner, repo, workflow_id: wf, ref: base
+                  });
+                  used = wf;
+                  break;
+                } catch (e) {
+                  // try next
+                }
+              }
+              if (!used) return { used: null, run: null, artifact: null, download_url: null, error: 'no nightly workflow found' };
+
+              // Poll run
+              let attempts = 0;
+              while (attempts < 60) {
+                attempts++;
+                const { data } = await gh.request('GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs', {
+                  owner, repo, workflow_id: used, branch: base, per_page: 1
+                });
+                const r = data.workflow_runs?.[0];
+                if (r && (r.status === 'completed' || r.conclusion)) { run = r; break; }
+                await sleep(5000);
+              }
+              if (!run) {
+                const { data } = await gh.request('GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs', {
+                  owner, repo, workflow_id: used, branch: base, per_page: 1
+                });
+                run = data.workflow_runs?.[0] || null;
+              }
+
+              // List artifacts
+              let art = null, dl = null;
+              if (run) {
+                const { data: arts } = await gh.rest.actions.listWorkflowRunArtifacts({ owner, repo, run_id: run.id, per_page: 10 });
+                art = (arts.artifacts || []).find(a => a.size_in_bytes > 0) || arts.artifacts?.[0] || null;
+                if (art) {
+                  dl = `https://api.github.com/repos/${owner}/${repo}/actions/artifacts/${art.id}/zip`;
+                }
+              }
+
+              return { used, run, artifact: art, download_url: dl };
+            }
+
+            // Dispatch core workflows
+            const results = [];
+            results.push(await dispatchWorkflow('merge-queue-ci.yml'));
+            results.push(await dispatchWorkflow('pr-size-gate.yml', { threshold: process.env.THRESH || '800' }));
+            results.push(await dispatchWorkflow('benchmark-zip-exact-check.yml', {
+              verify_hashes: (process.env.BENCH_VERIFY||'true'),
+              fail_on_diff:  (process.env.BENCH_FAIL||'false')
+            }));
+            results.push(await dispatchWorkflow('required-checks-audit.yml'));
+            results.push(await dispatchWorkflow('branch-protection-scan.yml'));
+
+            // Baseline Guard seed
+            const bg = await baselineGuardSeed();
+
+            // Nightly
+            const night = await nightlyRun();
+
+            // Summary
+            let md = `# Ops — Seed & Nightly\n\n`;
+            md += `**Base:** \`${base}\`\n\n`;
+            md += `## Seeded Checks\n`;
+            for (const r of results) {
+              const name = r.workflow_path.replace('.github/workflows/','');
+              if (r.error) {
+                md += `- \`${name}\`: ❌ ${r.error}\n`;
+              } else if (r.run) {
+                md += `- \`${name}\`: [run](${r.run.html_url}) — **${r.run.conclusion||r.run.status}**\n`;
+              } else {
+                md += `- \`${name}\`: dispatched (no run found yet)\n`;
+              }
+            }
+            md += `\n## Baseline Guard seed\n`;
+            md += `- PR: ${bg.pr?.html_url ? `[${bg.pr.number}](${bg.pr.html_url})` : '(n/a)'}\n`;
+            md += `- Run: ${bg.run?.html_url ? `[link](${bg.run.html_url})` : '(not found yet)'}\n`;
+
+            md += `\n## Nightly demo\n`;
+            md += `- Workflow: \`${night.used || '(not found)'}\`\n`;
+            md += `- Run: ${night.run?.html_url ? `[link](${night.run.html_url})` : '(n/a)'} — **${night.run?.conclusion || night.run?.status || 'n/a'}**\n`;
+            md += `- Artifact: ${night.artifact ? `\`${night.artifact.name}\` (${night.artifact.size_in_bytes} bytes)` : '(none)'}\n`;
+            md += `- Download URL: ${night.download_url || '(n/a)'}\n`;
+
+            await core.summary.addRaw(md).write();
+
+            // Expose for next step (artifact download)
+            core.setOutput('artifact_download_url', night.download_url || '');
+        
+      - name: Download nightly artifact ZIP (best-effort)
+        if: ${{ steps.seed.outputs.artifact_download_url != '' }}
+        run: |
+          set -e
+          echo "Downloading: ${{ steps.seed.outputs.artifact_download_url }}"
+          curl -sSL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -L \
+            -o nightly_artifact.zip "${{ steps.seed.outputs.artifact_download_url }}"
+          ls -l nightly_artifact.zip || true
+
+      - name: Verify README.txt in artifact (best-effort)
+        if: ${{ steps.seed.outputs.artifact_download_url != '' }}
+        run: |
+          set +e
+          if [ -f nightly_artifact.zip ]; then
+            unzip -l nightly_artifact.zip || true
+            unzip -p nightly_artifact.zip README.txt > README.txt 2>/dev/null
+            if [ -s README.txt ]; then
+              echo "### Nightly README.txt (first 200 chars)" >> $GITHUB_STEP_SUMMARY
+              head -c 200 README.txt >> $GITHUB_STEP_SUMMARY || true
+              echo "" >> $GITHUB_STEP_SUMMARY
+              # Simple checks (best effort)
+              grep -Eq "agent-ops-hub" README.txt && echo "Repo OK" || echo "Repo missing"
+              grep -Eq "[0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9]{2}:[0-9]{2}" README.txt && echo "Timestamp OK" || echo "Timestamp missing"
+            else
+              echo "No README.txt in artifact" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "No artifact zip present" >> $GITHUB_STEP_SUMMARY
+          fi
