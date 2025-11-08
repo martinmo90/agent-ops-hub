@@ -1,0 +1,193 @@
+name: Repo Tidy — Branch Scan
+run-name: "${{ github.workflow }} — ${{ github.ref_name }}"
+on:
+  workflow_dispatch:
+    inputs:
+      stale_days:
+        description: "Consider branches stale if last commit older than N days"
+        required: true
+        default: "45"
+      delete_merged:
+        description: "Delete branches fully merged into default?"
+        required: true
+        default: "false"
+      delete_stale_no_pr:
+        description: "Delete stale branches with no open PRs?"
+        required: true
+        default: "false"
+      extra_protected:
+        description: "Comma-separated extra protected branch names (optional)"
+        required: false
+        default: ""
+permissions:
+  contents: write   # needed to delete refs when enabled
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: repo-tidy-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Branch scan (dry-run by default)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const gh = github;
+            const owner = context.repo.owner;
+            const repo  = context.repo.repo;
+
+            const staleDays = parseInt(core.getInput('stale_days') || '45', 10);
+            const deleteMerged = (core.getInput('delete_merged')||'false').toLowerCase() === 'true';
+            const deleteStaleNoPr = (core.getInput('delete_stale_no_pr')||'false').toLowerCase() === 'true';
+            const extraProtected = (core.getInput('extra_protected')||'').split(',').map(s=>s.trim()).filter(Boolean);
+
+            // 1) Resolve default branch
+            const { data: repoInfo } = await gh.rest.repos.get({ owner, repo });
+            const defaultBranch = repoInfo.default_branch || 'main';
+
+            // 2) Load open PRs (heads to protect)
+            const openPRHeads = new Map();
+            let page=1;
+            while (true) {
+              const { data: prs } = await gh.rest.pulls.list({ owner, repo, state: 'open', per_page: 100, page });
+              if (!prs.length) break;
+              for (const pr of prs) {
+                if (pr.head?.ref) openPRHeads.set(pr.head.ref, pr.html_url);
+              }
+              page++;
+            }
+
+            // 3) List branches
+            const branches = [];
+            page = 1;
+            while (true) {
+              const { data } = await gh.rest.repos.listBranches({ owner, repo, per_page: 100, page });
+              if (!data.length) break;
+              branches.push(...data);
+              page++;
+            }
+
+            // 4) Classify branches
+            const PROTECTED = new Set([
+              defaultBranch,
+              'main','master','develop','dev',
+              'release','stable','prod','production',
+              ...extraProtected
+            ]);
+
+            // Utility: compare base...head; to see if branch merged, check unique commits in branch vs default
+            async function uniqueCommitsAgainstDefault(branch) {
+              try {
+                const { data: cmp } = await gh.rest.repos.compareCommitsWithBasehead({
+                  owner, repo,
+                  basehead: `${defaultBranch}...${branch}`
+                });
+                return { ahead_by: cmp.ahead_by, behind_by: cmp.behind_by, status: cmp.status };
+              } catch (e) {
+                return { ahead_by: NaN, behind_by: NaN, status: 'error' };
+              }
+            }
+
+            async function lastCommitDate(sha) {
+              try {
+                const { data: commit } = await gh.rest.repos.getCommit({ owner, repo, ref: sha });
+                const d = commit.commit?.committer?.date || commit.commit?.author?.date;
+                return d ? new Date(d) : null;
+              } catch {
+                return null;
+              }
+            }
+
+            // Now inspect each branch
+            const now = Date.now();
+            const rows = [];
+            for (const b of branches) {
+              const name = b.name;
+              const isDefault = (name === defaultBranch);
+              const isProtected = PROTECTED.has(name);
+              const openPrUrl = openPRHeads.get(name) || null;
+
+              // Compare to default
+              const cmp = await uniqueCommitsAgainstDefault(name);
+              const unique = isNaN(cmp.ahead_by) ? null : cmp.ahead_by;
+
+              // Last commit date
+              const lastDate = await lastCommitDate(b.commit.sha);
+              const lastAgeDays = lastDate ? Math.floor((now - lastDate.getTime()) / (1000*60*60*24)) : null;
+              const isStale = (lastAgeDays != null && lastAgeDays > staleDays);
+
+              // Status flags
+              let status = [];
+              if (isDefault) status.push('default');
+              if (isProtected) status.push('protected');
+              if (openPrUrl) status.push('open_pr');
+              if (unique === 0) status.push('merged_into_default');
+              if (isStale) status.push(`stale(${lastAgeDays}d)`);
+
+              // Deletion candidate logic (dry-run by default)
+              let deleteCandidate = false;
+              if (!isDefault && !isProtected && !openPrUrl) {
+                if (unique === 0 && deleteMerged) deleteCandidate = true;
+                if (isStale && deleteStaleNoPr) deleteCandidate = true;
+              }
+
+              rows.push({
+                name, isDefault, isProtected, openPrUrl,
+                ahead_by: unique,
+                behind_by: isNaN(cmp.behind_by)? null : cmp.behind_by,
+                last_commit: lastDate ? lastDate.toISOString() : '(unknown)',
+                last_age_days: lastAgeDays,
+                status: status.join(','),
+                deleteCandidate
+              });
+            }
+
+            // 5) Sort: default first, then open PRs, then merged, then stale, then others
+            rows.sort((a,b) => {
+              const rank = (r) =>
+                (r.isDefault?0:10) +
+                (r.openPrUrl?20:0) +
+                (r.ahead_by===0?30:0) +
+                ((r.last_age_days??0)>staleDays?40:0);
+              return rank(a) - rank(b) || a.name.localeCompare(b.name);
+            });
+
+            // 6) Prepare markdown
+            function mkRow(r) {
+              const pr = r.openPrUrl ? `[open](${r.openPrUrl})` : '';
+              return `| \`${r.name}\` | ${r.ahead_by==null?'-':r.ahead_by} | ${r.behind_by==null?'-':r.behind_by} | ${r.last_commit} | ${r.last_age_days??'-'} | ${r.status} | ${r.deleteCandidate?'🗑️':'-'} | ${pr} |`;
+            }
+
+            let md = `# Repo Tidy — Branch Scan (dry-run by default)\n\n`;
+            md += `**Repository:** \`${owner}/${repo}\`  |  **Default branch:** \`${defaultBranch}\`\n\n`;
+            md += `**Inputs:** stale_days=${staleDays}, delete_merged=${deleteMerged}, delete_stale_no_pr=${deleteStaleNoPr}\n\n`;
+            md += `**Rules:**\n- Never delete default or protected names: main, master, develop, dev, release, stable, prod, production${extraProtected.length?`, plus: ${extraProtected.join(', ')}`:''}\n- Never delete branches with open PRs\n- Merged criterion: 0 unique commits vs default (compare \`${defaultBranch}...branch\`)\n- Stale criterion: last commit older than ${staleDays} days\n\n`;
+            md += `| Branch | Unique vs ${defaultBranch} | Behind ${defaultBranch} | Last commit (ISO) | Age (d) | Status | Delete? | PR |\n`;
+            md += `|---|---:|---:|---|---:|---|:--:|:--:|\n`;
+            for (const r of rows) md += mkRow(r) + '\n';
+
+            const deletables = rows.filter(r => r.deleteCandidate).map(r => r.name);
+            md += `\n**Delete candidates (if deletion enabled):** ${deletables.length ? '`'+deletables.join('`, `')+'`' : '_none_'}\n`;
+
+            await core.summary.addRaw(md).write();
+
+            // 7) If deletion flags are enabled, delete candidates (final safety inside)
+            const canDelete = (deleteMerged || deleteStaleNoPr);
+            if (canDelete && deletables.length) {
+              // Double-check: do not delete any protected/default/open PR branches
+              for (const name of deletables) {
+                const protectedSet = new Set([defaultBranch, ...PROTECTED]);
+                if (protectedSet.has(name)) continue;
+                if (openPRHeads.has(name)) continue;
+                try {
+                  await gh.rest.git.deleteRef({ owner, repo, ref: `heads/${name}` });
+                  core.info(`Deleted branch ${name}`);
+                } catch (e) {
+                  core.warning(`Failed to delete ${name}: ${e.message}`);
+                }
+              }
+            }
