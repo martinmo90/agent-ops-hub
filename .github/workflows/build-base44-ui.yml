@@ -1,0 +1,98 @@
+name: Build Base44 UI
+run-name: "${{ github.workflow }} — ${{ github.ref_name }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_id:
+        description: "App ID (optional, will use BASE44_APP_ID secret if blank)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build-base44-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check if zip exists
+        id: check-zip
+        run: |
+          if [ -f "vendor/base44-ui.zip" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "✅ Found vendor/base44-ui.zip"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "❌ vendor/base44-ui.zip not found"
+            exit 1
+          fi
+
+      - name: Get zip metadata
+        id: zip-meta
+        run: |
+          ZIP_PATH="vendor/base44-ui.zip"
+          ZIP_SIZE=$(stat -c%s "$ZIP_PATH")
+          ZIP_SIZE_MB=$(echo "scale=2; $ZIP_SIZE / 1048576" | bc)
+          ZIP_SHA=$(sha256sum "$ZIP_PATH" | cut -d' ' -f1)
+          
+          echo "size=$ZIP_SIZE" >> $GITHUB_OUTPUT
+          echo "size_mb=$ZIP_SIZE_MB" >> $GITHUB_OUTPUT
+          echo "sha=$ZIP_SHA" >> $GITHUB_OUTPUT
+          
+          echo "📦 Zip size: $ZIP_SIZE bytes ($ZIP_SIZE_MB MB)"
+          echo "🔐 SHA256: $ZIP_SHA"
+          
+          # Check size limit (90MB)
+          if [ $ZIP_SIZE -gt 94371840 ]; then
+            echo "❌ Zip exceeds 90MB limit!"
+            exit 1
+          fi
+
+      - name: Unzip base44-ui
+        id: unzip
+        run: |
+          mkdir -p build/base44-ui-dist
+          cd build/base44-ui-dist
+          unzip -q ../../vendor/base44-ui.zip
+          echo "✅ Unzipped successfully"
+
+      - name: Generate tree preview
+        id: tree
+        run: |
+          cd build/base44-ui-dist
+          echo "📂 Directory tree (first 15 files):"
+          find . -type f | head -15 | sort
+          
+          # Save full tree for artifact
+          find . -type f | sort > ../file-list.txt
+          echo "Total files: $(wc -l < ../file-list.txt)"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: base44-ui-dist
+          path: build/base44-ui-dist/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload file list
+        uses: actions/upload-artifact@v4
+        with:
+          name: base44-ui-file-list
+          path: build/file-list.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Build summary
+        run: |
+          echo "## ✅ Build Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Zip Size:** ${{ steps.zip-meta.outputs.size_mb }} MB" >> $GITHUB_STEP_SUMMARY
+          echo "- **SHA256:** \`${{ steps.zip-meta.outputs.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Run:** [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
