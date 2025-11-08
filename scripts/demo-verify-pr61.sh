@@ -4,6 +4,13 @@
 
 set -euo pipefail
 
+# Variables for documentation/context
+# shellcheck disable=SC2034
+readonly REPO_OWNER="martinmo90"
+# shellcheck disable=SC2034
+readonly REPO_NAME="agent-ops-hub"
+readonly PR_NUMBER="61"
+
 echo "============================================================"
 echo "Base44 ZIP Verification Demo for PR #61"
 echo "============================================================"
@@ -11,10 +18,6 @@ echo ""
 echo "Note: PR #61 is now closed/merged, so this is a retrospective"
 echo "analysis of what the verification would have reported."
 echo ""
-
-REPO_OWNER="martinmo90"
-REPO_NAME="agent-ops-hub"
-PR_NUMBER="61"
 
 echo "=== Step 1: PR Details ==="
 echo "PR Number: #$PR_NUMBER"
