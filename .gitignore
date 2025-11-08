@@ -1,3 +1,10 @@
+# Dependencies
 node_modules/
+
+# Environment files
 apps/shadcn-chatbot-kit/.env.local
 apps/shadcn-chatbot-kit/apps/www/.env.local
+
+# Next.js build output
+.next/
+out/
