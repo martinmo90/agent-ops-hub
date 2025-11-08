@@ -1,0 +1,319 @@
+BASE44 UI VERIFICATION SYSTEM - FLOW DIAGRAM
+=============================================
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      CONTRIBUTOR WORKFLOW                                │
+└─────────────────────────────────────────────────────────────────────────┘
+
+    1. Create PR with Base44 zip
+       ┌──────────────────┐
+       │  GitHub PR #N    │
+       │  Branch: my-feat │
+       └────────┬─────────┘
+                │
+                │ Contains: vendor/base44-ui.zip
+                │
+                ▼
+       ┌──────────────────┐
+       │  Repository      │
+       │  vendor/         │
+       │  └─base44-ui.zip │
+       └──────────────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    VERIFICATION SCRIPT FLOW                              │
+└─────────────────────────────────────────────────────────────────────────┘
+
+    2. Maintainer triggers verification
+       $ export GITHUB_TOKEN="ghp_..."
+       $ ./scripts/verify-base44-zip.sh <pr_number>
+
+                │
+                │
+                ▼
+       ┌──────────────────┐
+       │  Step 1: Resolve │ ◄─── GitHub REST API
+       │  PR head branch  │      GET /pulls/{pr}
+       └────────┬─────────┘
+                │
+                │ HEAD_REF="my-feat"
+                │ HEAD_SHA="abc123..."
+                │
+                ▼
+       ┌──────────────────┐
+       │  Step 2: Check   │ ◄─── GitHub REST API
+       │  ZIP exists      │      GET /contents/vendor/base44-ui.zip?ref=...
+       └────────┬─────────┘
+                │
+                ├─── ❌ Not Found (404)
+                │    │
+                │    └──► Post failure comment
+                │         Stop (exit 1)
+                │
+                └─── ✅ Found (200)
+                     │
+                     ├─ Get size, SHA
+                     ├─ Check if > 90 MB → warn
+                     │
+                     ▼
+       ┌──────────────────┐
+       │  Step 3: Ensure  │ ◄─── GitHub REST API
+       │  workflow exists │      GET /contents/.github/workflows/...
+       └────────┬─────────┘
+                │
+                ├─── ❌ Missing (404)
+                │    │
+                │    └──► Post "workflow missing" comment
+                │         Stop (exit 1)
+                │
+                └─── ✅ Found (200)
+                     │
+                     ▼
+       ┌──────────────────┐
+       │  Step 4: Dispatch│ ◄─── GitHub REST API
+       │  build workflow  │      POST /actions/workflows/.../dispatches
+       └────────┬─────────┘      {ref: HEAD_REF, inputs: {app_id: ...}}
+                │
+                │ Wait 5s for workflow to appear
+                │
+                ▼
+       ┌──────────────────┐
+       │  Find workflow   │ ◄─── GitHub REST API
+       │  run ID          │      GET /actions/workflows/.../runs?branch=...
+       └────────┬─────────┘
+                │
+                │ RUN_ID found
+                │
+                ▼
+       ┌──────────────────┐
+       │  Step 5: Monitor │ ◄─── GitHub REST API (polling every 15s)
+       │  run completion  │      GET /actions/runs/{run_id}
+       └────────┬─────────┘
+                │
+                │ Wait up to 10 minutes
+                │
+                ├─── ⏱️ Timeout
+                │    │
+                │    └──► Post timeout comment
+                │         Stop (exit 1)
+                │
+                └─── ✅ Completed
+                     │
+                     ├─ Get conclusion (success/failure)
+                     ├─ Get job logs
+                     ├─ Get artifacts
+                     │
+                     ▼
+       ┌──────────────────┐
+       │  Compile Report  │
+       │  - Status        │
+       │  - ZIP metadata  │
+       │  - Artifact link │
+       │  - Tree preview  │
+       │  - Build logs    │
+       └────────┬─────────┘
+                │
+                ▼
+       ┌──────────────────┐
+       │  Post detailed   │ ◄─── GitHub REST API
+       │  PR comment      │      POST /issues/{pr}/comments
+       └────────┬─────────┘
+                │
+                ▼
+       ┌──────────────────┐
+       │  Exit            │
+       │  0 = success     │
+       │  1 = failure     │
+       └──────────────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    WORKFLOW EXECUTION FLOW                               │
+└─────────────────────────────────────────────────────────────────────────┘
+
+    Triggered by: workflow_dispatch (manual or API)
+
+       ┌──────────────────┐
+       │  Checkout repo   │ ◄─── actions/checkout@v4
+       └────────┬─────────┘
+                │
+                ▼
+       ┌──────────────────┐
+       │  Assert ZIP      │
+       │  exists          │ test -f vendor/base44-ui.zip
+       └────────┬─────────┘
+                │
+                ├─── ❌ Not found
+                │    │
+                │    └──► Fail with error message
+                │
+                └─── ✅ Found
+                     │
+                     ▼
+       ┌──────────────────┐
+       │  Unzip to        │
+       │  apps/base44-ui/ │ unzip -q vendor/base44-ui.zip -d apps/base44-ui
+       └────────┬─────────┘
+                │
+                │ List first 120 files (logged)
+                │
+                ▼
+       ┌──────────────────┐
+       │  Setup Node.js   │ ◄─── actions/setup-node@v4
+       │  v20 with cache  │      (caches package-lock.json)
+       └────────┬─────────┘
+                │
+                ▼
+       ┌──────────────────┐
+       │  Inject Base44   │
+       │  app ID          │ APP_ID from input or secret
+       └────────┬─────────┘      Write to .env if provided
+                │
+                ▼
+       ┌──────────────────┐
+       │  Install & Build │
+       │  npm ci          │
+       │  npm run build   │
+       └────────┬─────────┘
+                │
+                │ Output: apps/base44-ui/dist/
+                │
+                ▼
+       ┌──────────────────┐
+       │  Upload artifact │ ◄─── actions/upload-artifact@v4
+       │  base44-ui-dist  │      (7-day retention)
+       └──────────────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       PR COMMENT FORMATS                                 │
+└─────────────────────────────────────────────────────────────────────────┘
+
+    SUCCESS COMMENT:
+    ┌─────────────────────────────────────────────────┐
+    │ ✅ Base44 UI Build Status: success              │
+    │                                                  │
+    │ ### Build Details                                │
+    │ - Workflow Run: [#123456](link)                 │
+    │ - Branch: `my-feat` (`abc123`)                  │
+    │ - ZIP Size: 12.34 MB                            │
+    │ - ZIP SHA: `def456...`                          │
+    │                                                  │
+    │ ### Artifact                                     │
+    │ - Name: `base44-ui-dist`                        │
+    │ - Size: 5.67 MB                                 │
+    │ - Download: [Click here](link)                  │
+    │                                                  │
+    │ ### Tree After Unzip (first 15 files)           │
+    │ [file listing...]                               │
+    │                                                  │
+    │ ### Build Log Highlights                        │
+    │ [expandable logs...]                            │
+    │                                                  │
+    │ NOTE: Base44 output is a UI shell...            │
+    └─────────────────────────────────────────────────┘
+
+    FAILURE COMMENT (ZIP missing):
+    ┌─────────────────────────────────────────────────┐
+    │ ❌ vendor/base44-ui.zip is missing on           │
+    │ `my-feat`.                                      │
+    │                                                  │
+    │ Please upload your Base44 zip at exactly        │
+    │ `vendor/base44-ui.zip` in this branch.          │
+    └─────────────────────────────────────────────────┘
+
+    SIZE WARNING (> 90 MB):
+    ┌─────────────────────────────────────────────────┐
+    │ ⚠️ Warning: The zip file is 95.5 MB. GitHub    │
+    │ enforces a 100 MB file limit. Please keep       │
+    │ the zip < 90 MB to avoid issues.                │
+    └─────────────────────────────────────────────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         FILE STRUCTURE                                   │
+└─────────────────────────────────────────────────────────────────────────┘
+
+    agent-ops-hub/
+    │
+    ├── .github/workflows/
+    │   └── build-base44-ui.yml ............ Build workflow
+    │
+    ├── scripts/
+    │   ├── verify-base44-zip.sh ........... Main verification script
+    │   └── demo-verify-pr61.sh ............ Demo/analysis script
+    │
+    ├── docs/
+    │   ├── base44-ui-verification.md ...... User guide (8.8 KB)
+    │   ├── pr61-verification-report.md .... PR #61 analysis (7.1 KB)
+    │   └── base44-system-diagram.txt ...... This file
+    │
+    ├── vendor/
+    │   └── base44-ui.zip .................. Expected upload location
+    │
+    ├── apps/base44-ui/ .................... Created during build
+    │   ├── package.json
+    │   ├── src/
+    │   └── dist/ .......................... Build output (artifact)
+    │
+    ├── IMPLEMENTATION_SUMMARY.md .......... Complete implementation doc
+    └── README.md .......................... Updated with Base44 section
+
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         USAGE EXAMPLES                                   │
+└─────────────────────────────────────────────────────────────────────────┘
+
+    # Verify a PR
+    $ export GITHUB_TOKEN="ghp_your_token_here"
+    $ ./scripts/verify-base44-zip.sh 123
+
+    # Run demo for PR #61
+    $ ./scripts/demo-verify-pr61.sh
+
+    # Manually dispatch workflow
+    $ gh workflow run build-base44-ui.yml --ref my-branch
+
+    # Download artifact
+    $ gh run download <run-id> -n base44-ui-dist
+
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         QUICK REFERENCE                                  │
+└─────────────────────────────────────────────────────────────────────────┘
+
+    REQUIRED FILE:     vendor/base44-ui.zip
+    SIZE LIMIT:        < 100 MB (recommended < 90 MB)
+    BUILD OUTPUT:      apps/base44-ui/dist/
+    ARTIFACT NAME:     base44-ui-dist
+    RETENTION:         7 days
+    NODE VERSION:      20
+    PACKAGE MANAGER:   npm
+    BUILD COMMAND:     npm ci && npm run build
+
+    SCRIPT EXIT CODES:
+    0 = Success (build passed)
+    1 = Failure (zip missing, build failed, timeout, etc.)
+
+    WORKFLOW TRIGGERS:
+    - Manual: workflow_dispatch via GitHub UI or API
+    - Can be automated via PR labels, webhooks, etc.
+
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         SUPPORT & DOCS                                   │
+└─────────────────────────────────────────────────────────────────────────┘
+
+    📖 User Guide:        docs/base44-ui-verification.md
+    📊 PR #61 Report:     docs/pr61-verification-report.md
+    📝 Implementation:    IMPLEMENTATION_SUMMARY.md
+    💻 Main Script:       scripts/verify-base44-zip.sh
+    ⚙️  Workflow:         .github/workflows/build-base44-ui.yml
+
+    For issues, consult the troubleshooting section in the user guide.
+
+
+═══════════════════════════════════════════════════════════════════════════
+End of Diagram
+═══════════════════════════════════════════════════════════════════════════
