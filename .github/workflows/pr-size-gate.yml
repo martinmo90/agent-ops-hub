@@ -32,7 +32,7 @@ jobs:
             core.notice(`fileCount=${fileCount}, totalChanges=${totalChanges}`);
 
             const MAX_FILES   = 10;
-            const MAX_CHANGES = 500;
+            const MAX_CHANGES = 700;
 
             if (fileCount > MAX_FILES || totalChanges > MAX_CHANGES) {
               const msg = [

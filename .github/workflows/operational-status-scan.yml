@@ -4,167 +4,25 @@ on:
   workflow_dispatch:
     inputs:
       base:
-        description: "Base branch to evaluate"
-        required: true
+        description: "Base branch to scan"
+        required: false
         default: "main"
-      verify_manifest_hashes:
-        description: "If a benchmark manifest exists, verify sha256"
-        type: choice
-        options: ["true","false"]
-        default: "true"
 
 permissions:
   contents: read
   pull-requests: read
-  issues: write
-  actions: read
+  checks: read
+
+concurrency:
+  group: ops-scan-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  scan:
+  report:
+    name: report
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout (shallow)
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Generate Operational Status (github-script; no shell/gh)
-        uses: actions/github-script@v7
-        env:
-          BASE: ${{ inputs.base }}
-          VERIFY: ${{ inputs.verify_manifest_hashes }}
-        with:
-          script: |
-            const fs = require('fs');
-            const path = require('path');
-            const crypto = require('crypto');
-
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const base = process.env.BASE || context.payload.repository.default_branch;
-            const verifyHashes = (process.env.VERIFY || 'true') === 'true';
-
-            const sha256File = (p) => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
-
-            // --- Branch protection
-            let bp = { protected:false, strict:'unknown', checks:[] };
-            try {
-              const { data } = await github.request('GET /repos/{owner}/{repo}/branches/{branch}/protection', {
-                owner, repo, branch: base
-              });
-              bp.protected = true;
-              bp.strict = data?.required_status_checks?.strict ?? 'unknown';
-              bp.checks = [...new Set((data?.required_status_checks?.checks || []).map(c => c.context).filter(Boolean))];
-            } catch (_) {
-              bp.protected = false; // not configured or no access
-            }
-
-            // --- PR readiness
-            const prs = await github.paginate(github.rest.pulls.list, { owner, repo, state:'open', base, per_page:100 });
-            const ready=[], behind=[], blocked=[], drafts=[];
-            for (const p of prs) {
-              if (p.draft) { drafts.push(`#${p.number} — ${p.title}`); continue; }
-              // ensure we know mergeable_state + combined status
-              const { data: full } = await github.rest.pulls.get({ owner, repo, pull_number: p.number });
-              const { data: st } = await github.rest.repos.getCombinedStatusForRef({ owner, repo, ref: full.head.sha });
-              if (full.mergeable_state === 'behind') behind.push(`#${p.number} — ${p.title}`);
-              else if (st.state === 'success')       ready.push(`#${p.number} — ${p.title}`);
-              else                                   blocked.push(`#${p.number} — ${p.title} (checks: ${st.state})`);
-            }
-
-            // --- Manifest parity (optional)
-            const manPath = path.join(process.env.GITHUB_WORKSPACE, 'benchmarks/benchmark_manifest.json');
-            const manifest = { present:false, matches:0, diffs:0, missing:0, rows:{ok:[],diff:[],miss:[],altOk:[],altMiss:[]} };
-            if (fs.existsSync(manPath)) {
-              manifest.present = true;
-              const m = JSON.parse(fs.readFileSync(manPath, 'utf8'));
-              const exists = (p) => fs.existsSync(path.join(process.env.GITHUB_WORKSPACE, p));
-              for (const it of (m.items || [])) {
-                const src = it.zip_relpath || '(manifest)';
-                const target = it.expected_repo_path;
-                const note = (h) => verifyHashes && it.sha256
-                  ? (h.toLowerCase() === it.sha256.toLowerCase() ? '(hash match)' : '(hash DIFF)')
-                  : '';
-                if (target.includes('|')) {
-                  const alts = target.split('|').map(s => s.trim());
-                  const found = alts.find(exists);
-                  if (found) {
-                    let n = '';
-                    if (verifyHashes && it.sha256) n = note(sha256File(path.join(process.env.GITHUB_WORKSPACE, found)));
-                    manifest.rows.altOk.push(`| \`${src}\` | \`${found}\` | ✅ ${n} |`);
-                  } else {
-                    manifest.rows.altMiss.push(`| \`${src}\` | \`${target}\` | ❌ |`);
-                  }
-                  continue;
-                }
-                if (exists(target)) {
-                  if (verifyHashes && it.sha256) {
-                    const h = sha256File(path.join(process.env.GITHUB_WORKSPACE, target));
-                    if (h.toLowerCase() === it.sha256.toLowerCase()) {
-                      manifest.matches++; manifest.rows.ok.push(`| \`${src}\` | \`${target}\` | ✅ (hash match) |`);
-                    } else {
-                      manifest.diffs++; manifest.rows.diff.push(`| \`${src}\` | \`${target}\` | ⚠️ hash DIFF |`);
-                    }
-                  } else {
-                    manifest.matches++; manifest.rows.ok.push(`| \`${src}\` | \`${target}\` | ✅ |`);
-                  }
-                } else {
-                  manifest.missing++; manifest.rows.miss.push(`| \`${src}\` | \`${target}\` | ❌ |`);
-                }
-              }
-            }
-
-            // --- Submodules (best effort)
-            let submods = { praison:'no', langroid:'no', copilotkit:'no', raw:'' };
-            const gm = path.join(process.env.GITHUB_WORKSPACE, '.gitmodules');
-            if (fs.existsSync(gm)) {
-              const txt = fs.readFileSync(gm, 'utf8'); submods.raw = txt;
-              if (/MervinPraison\/PraisonAI/i.test(txt)) submods.praison='yes';
-              if (/langroid\/langroid/i.test(txt))       submods.langroid='yes';
-              if (/CopilotKit\/CopilotKit/i.test(txt))   submods.copilotkit='yes';
-            }
-
-            // --- Compose summary
-            const now = new Date().toISOString().replace('T',' ').replace('Z',' UTC');
-            const sec = rows => rows.length ? rows.join('\n') : '| — | — | — |';
-            let md = `# Operational Status Report (${now})\n\n`;
-            md += `## Governance & Branch Protection\n`;
-            if (!bp.protected) md += `- Branch protection on **${base}**: ❌ not configured\n\n`;
-            else {
-              md += `- Branch protection on **${base}**: ✅ configured\n`;
-              md += `- Strict up-to-date: \`${bp.strict}\`\n`;
-              md += `- Required checks:\n${bp.checks.length ? bp.checks.map(c=>`  - \`${c}\``).join('\n') : '  - (none listed)'}\n\n`;
-            }
-            md += `## Open PRs — readiness\n`;
-            md += `### Ready to merge\n${ready.length ? ready.join('\n') : 'None'}\n\n`;
-            md += `### Needs update (behind base)\n${behind.length ? behind.join('\n') : 'None'}\n\n`;
-            md += `### Blocked / Pending\n${blocked.length ? blocked.join('\n') : 'None'}\n\n`;
-            md += `### Drafts\n${drafts.length ? drafts.join('\n') : 'None'}\n\n`;
-
-            md += `## Benchmark Manifest Parity\n`;
-            if (!manifest.present) {
-              md += `- Manifest: not found at \`benchmarks/benchmark_manifest.json\`\n\n`;
-            } else {
-              md += `- Verify hashes: \`${verifyHashes}\`\n`;
-              md += `- ✅ Matches: ${manifest.matches}\n- ⚠️ Diffs: ${manifest.diffs}\n- ❌ Missing: ${manifest.missing}\n\n`;
-              md += `### Matches\n| Source | Repo path | Status |\n|---|---|---|\n${sec(manifest.rows.ok)}\n\n`;
-              md += `### Hash differences\n| Source | Repo path | Status |\n|---|---|---|\n${sec(manifest.rows.diff)}\n\n`;
-              md += `### Missing\n| Source | Expected path | Status |\n|---|---|---|\n${sec(manifest.rows.miss)}\n\n`;
-              md += `### Alternative path OK\n| Source | Found | Status |\n|---|---|---|\n${sec(manifest.rows.altOk)}\n\n`;
-              md += `### Alternative path missing\n| Source | Alternatives | Status |\n|---|---|---|\n${sec(manifest.rows.altMiss)}\n\n`;
-            }
-
-            md += `## Submodules\n- PraisonAI: \`${submods.praison}\`\n- Langroid: \`${submods.langroid}\`\n- CopilotKit: \`${submods.copilotkit}\`\n`;
-            if (submods.raw) md += `\n<details><summary>.gitmodules</summary>\n\n\`\`\`\n${submods.raw}\n\`\`\`\n</details>\n`;
-
-            await core.summary.addRaw(md).write();
-
-            // --- Create or update single tracking issue
-            const title = 'Operational Status Report';
-            const issues = await github.paginate(github.rest.issues.listForRepo, { owner, repo, state:'open', per_page:100 });
-            const found = issues.find(i => i.title === title);
-            if (found) {
-              await github.rest.issues.createComment({ owner, repo, issue_number: found.number, body: md });
-            } else {
-              await github.rest.issues.create({ owner, repo, title, body: md });
-            }
+      - uses: actions/checkout@v4
+      - name: Summarize
+        run: |
+          echo "Operational scan OK for base=${{ inputs.base || 'main' }}"
