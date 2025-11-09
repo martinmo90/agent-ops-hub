@@ -1,0 +1,39 @@
+name: Conventional Commits / lint
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+run-name: "${{ github.workflow }} — #${{ github.event.pull_request.number }}"
+
+permissions:
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: cc-lint-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate PR title against Conventional Commits
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Allowed types (tune as needed)
+          types: |
+            feat
+            fix
+            chore
+            docs
+            refactor
+            perf
+            test
+            ci
+            build
+          requireScope: false
+          # Set this if you want to allow "Revert" commits:
+          # allowRevert: true
