@@ -11,7 +11,7 @@ NAME="${REPO#*/}"
 BRANCH="main"
 
 # Fetch repo settings (e.g., allow_auto_merge)
-REPO_JSON="$(gh api "repos/${OWNER}/${NAME}")"
+REPO_JSON="$(gh api "repos/${OWNER}/${NAME}" 2>/dev/null || echo '{}')"
 ALLOW_AUTO_MERGE="$(echo "$REPO_JSON" | jq -r '.allow_auto_merge // false')"
 
 # Branch protection (may require repository settings visibility)
@@ -39,7 +39,7 @@ fi
 
 CAT_REQ_CTX=$(if [[ -n "$REQUIRED_CONTEXTS" ]]; then echo "$REQUIRED_CONTEXTS"; else echo "(none)"; fi)
 
-read -r -d '' REPORT <<EOF
+read -r -d '' REPORT <<EOF || true
 ### Branch Protection Scan for \`${BRANCH}\`
 
 **Require PR:** \`$([[ "$REQUIRE_PR" == "true" ]] && echo yes || echo no)\`  
