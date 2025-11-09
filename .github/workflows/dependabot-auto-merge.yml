@@ -1,0 +1,31 @@
+name: Dependabot Auto-merge
+run-name: "${{ github.workflow }} — ${{ github.ref_name }}"
+on:
+  pull_request_target:
+    types: [opened, synchronize, labeled, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  enable-auto-merge:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ensure repo allows auto-merge (no-op if already set)
+        run: echo "Assumes Auto-merge is enabled in repo settings."
+      - name: Enable auto-merge on this PR (squash)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url || '' }}
+        run: |
+          if [ -n "$PR_URL" ]; then
+            gh pr merge "$PR_URL" --squash --auto || echo "Queued/Not eligible yet."
+          else
+            echo "No PR URL in this event."
+          fi

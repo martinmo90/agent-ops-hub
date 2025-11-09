@@ -1,0 +1,30 @@
+name: Conventional Commits
+run-name: "${{ github.workflow }} — ${{ github.ref_name }}"
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-title:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR title follows Conventional Commits
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "Title: $TITLE"
+          re='^(feat|fix|chore|docs|refactor|perf|test|build|ci|revert|style)(\(.+\))?(!)?: .+'
+          if [[ ! "$TITLE" =~ $re ]]; then
+            echo "::error ::PR title does not follow Conventional Commits."
+            echo "Examples: feat(ui): add button; fix(api): handle 404"
+            exit 1
+          fi
+          echo "OK"
