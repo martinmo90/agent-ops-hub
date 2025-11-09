@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   verifyExpected:
-    name: Baseline Guard / verifyExpected
+    name: verifyExpected
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

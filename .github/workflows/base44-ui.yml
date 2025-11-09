@@ -1,0 +1,88 @@
+name: Base44 UI — Build & Deploy
+run-name: "${{ github.workflow }} — ${{ github.ref_name }}"
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - "vendor/base44-ui.zip"
+      - ".github/workflows/base44-ui.yml"
+
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: base44-ui-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Assert vendor zip exists
+        run: |
+          test -f vendor/base44-ui.zip || { echo "vendor/base44-ui.zip missing"; exit 1; }
+
+      - name: Unzip to apps/base44-ui
+        run: |
+          rm -rf apps/base44-ui
+          mkdir -p apps/base44-ui
+          unzip -q vendor/base44-ui.zip -d apps/base44-ui
+          echo "Tree (first ~80 files):"
+          find apps/base44-ui -maxdepth 2 -type f | sed -n '1,80p'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            apps/base44-ui/package-lock.json
+            apps/base44-ui/package.json
+
+      - name: Install & Build
+        working-directory: apps/base44-ui
+        run: |
+          npm ci
+          npm run build
+          ls -lah dist || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: base44-ui-dist
+          path: apps/base44-ui/dist
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy:
+    name: deploy
+    needs: build
+    if: ${{ github.ref_name == 'main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download built UI
+        uses: actions/download-artifact@v4
+        with:
+          name: base44-ui-dist
+          path: ./dist
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
