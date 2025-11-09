@@ -8,3 +8,15 @@ apps/shadcn-chatbot-kit/apps/www/.env.local
 # Next.js build output
 .next/
 out/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/

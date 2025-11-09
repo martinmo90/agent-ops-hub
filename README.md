@@ -192,6 +192,35 @@ Branches with `claude/` prefix can be auto-merged by the auto-merge script when 
 ### Automation scripts
 
 - `scripts/auto_merge_claude.sh` - Auto-merge claude/* PRs when checks pass
+- `scripts/run-operational-readiness-check.sh` - Run comprehensive operational readiness check
+
+## Operational Readiness Check
+
+Automated script that performs a comprehensive sanity check of the repository using GitHub REST API.
+
+### Features
+
+- ✅ Dispatches and monitors key workflows on main branch
+- ✅ Creates smoke test PR to verify end-to-end PR flow
+- ✅ Generates comprehensive report as GitHub Issue
+- ✅ Verifies branch protection and required checks
+
+### Quick Start
+
+```bash
+# Set your GitHub token
+export GITHUB_TOKEN=your_token_here
+
+# Run the check
+./scripts/run-operational-readiness-check.sh
+```
+
+The script will:
+1. Dispatch 5 key workflows and monitor their completion
+2. Create a smoke test PR
+3. Generate a report and post it as a GitHub Issue
+
+For detailed documentation, see [docs/operational-readiness-check.md](docs/operational-readiness-check.md).
 
 ## License
 
