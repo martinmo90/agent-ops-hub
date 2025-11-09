@@ -15,7 +15,8 @@ REPO_JSON="$(gh api "repos/${OWNER}/${NAME}")"
 ALLOW_AUTO_MERGE="$(echo "$REPO_JSON" | jq -r '.allow_auto_merge // false')"
 
 # Branch protection (may require repository settings visibility)
-PROT_JSON="$(gh api "repos/${OWNER}/${NAME}/branches/${BRANCH}/protection" 2>/dev/null || echo '{}')"
+PROT_JSON="$(gh api "repos/${OWNER}/${NAME}/branches/${BRANCH}/protection" 2>/dev/null || true)"
+if [ -z "$PROT_JSON" ]; then PROT_JSON='{}'; fi
 
 REQUIRE_PR="$(echo "$PROT_JSON" | jq -r 'has("required_pull_request_reviews")')"
 STRICT_UP_TO_DATE="$(echo "$PROT_JSON" | jq -r '.required_status_checks.strict // false')"
