@@ -1,4 +1,4 @@
-name: Baseline Guard / verifyExpected
+name: Baseline Guard
 run-name: "${{ github.workflow }} — ${{ github.event_name == 'pull_request' && format('#{0}', github.event.pull_request.number) || github.ref_name }}"
 on:
   pull_request:
@@ -12,8 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verifyExpected:
-    name: Baseline Guard / verifyExpected
+  verify:
+    name: verify
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
