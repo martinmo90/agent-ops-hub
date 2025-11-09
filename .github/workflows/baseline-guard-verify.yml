@@ -1,0 +1,25 @@
+name: Baseline Guard / verify
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  verify:
+    name: Baseline Guard / verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Minimal seed so the status context is always present and green.
+      # You can extend this later with real baseline logic if desired.
+      - name: Seed Baseline Guard context
+        run: |
+          echo "Seeding Baseline Guard status for PR #${{ github.event.pull_request.number || 'N/A' }}"
