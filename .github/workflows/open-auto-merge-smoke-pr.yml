@@ -4,116 +4,50 @@ on:
   workflow_dispatch:
     inputs:
       base:
-        description: Base branch
-        default: main
-        required: true
+        description: "Base branch"
+        required: false
+        default: "main"
       title:
-        description: PR title
-        default: "chore(demo): tiny change to exercise merge queue"
-        required: true
+        description: "PR title"
+        required: false
+        default: "chore: smoke PR"
       body:
-        description: PR body
-        default: "Automated tiny change to verify required checks / queue-to-merge flow."
-        required: true
+        description: "PR body"
+        required: false
+        default: "auto smoke"
 
 permissions:
-  contents: write          # to push branch
-  pull-requests: write     # to open PR & comment
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: smoke-pr-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  open-and-auto-merge:
+  create:
+    name: create
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up git identity
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Make change
         run: |
+          ts=$(date +%Y%m%d-%H%M%S)
+          br="chore/smoke-pr-$ts"
+          echo "demo $ts" >> docs/OS_DEMO.md
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Create tiny branch & change
-        id: change
-        env:
-          BASE: ${{ github.event.inputs.base }}
-        run: |
-          set -euo pipefail
-          TS="$(date -u +'%Y%m%d-%H%M%S')"
-          BRANCH="chore/smoke-pr-${TS}"
-          git checkout "$BASE"
-          git pull --ff-only
-          git switch -c "$BRANCH"
-
-          mkdir -p docs
-          echo "- queue smoke @ ${TS}" >> docs/OS_DEMO.md
-
-          git add docs/OS_DEMO.md
-          git commit -m "chore(demo): append queue smoke marker @ ${TS}"
-          git push -u origin "$BRANCH"
-
-          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
-
+          git checkout -b "$br"
+          git add -A
+          git commit -m "chore: smoke $ts"
+          git push origin "$br"
+          echo "BR=$br" >> $GITHUB_ENV
       - name: Open PR
-        id: open_pr
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          BASE: ${{ github.event.inputs.base }}
-          HEAD_BRANCH: ${{ steps.change.outputs.branch }}
-          TITLE: ${{ github.event.inputs.title }}
-          BODY: ${{ github.event.inputs.body }}
         run: |
-          set -euo pipefail
-          PR_JSON="$(gh api "repos/${REPO}/pulls" \
-            -f title="${TITLE}" \
-            -f head="${HEAD_BRANCH}" \
-            -f base="${BASE}" \
-            -f body="${BODY}")"
-          PR_NUMBER="$(echo "$PR_JSON" | jq -r '.number')"
-          PR_NODE_ID="$(echo "$PR_JSON" | jq -r '.node_id')"
-          PR_URL="$(echo "$PR_JSON" | jq -r '.html_url')"
-
-          echo "number=$PR_NUMBER"  >> "$GITHUB_OUTPUT"
-          echo "node_id=$PR_NODE_ID" >> "$GITHUB_OUTPUT"
-          echo "url=$PR_URL"         >> "$GITHUB_OUTPUT"
-
-      - name: Enable Auto-Merge (SQUASH)
-        id: auto_merge
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NODE_ID: ${{ steps.open_pr.outputs.node_id }}
-        run: |
-          set -euo pipefail
-          # Requires repo setting: Settings → General → Pull Requests → Allow auto-merge
-          # If a merge queue is required, GitHub will queue-to-merge after checks pass.
-          gh api graphql -f query='
-            mutation($id:ID!){
-              enablePullRequestAutoMerge(input:{pullRequestId:$id, mergeMethod:SQUASH}){
-                pullRequest { number title autoMergeRequest { enabledAt } }
-              }
-            }' -F id="$PR_NODE_ID" || echo "::warning::Failed to enable auto-merge via API (enable manually in the UI)."
-
-      - name: Comment PR with next steps
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ steps.open_pr.outputs.number }}
-          PR_URL: ${{ steps.open_pr.outputs.url }}
-        run: |
-          set -euo pipefail
-          COMMENT_BODY='### 🔄 Queue-to-merge smoke PR created
-
-          - This PR was opened automatically to exercise **required checks** and the **merge queue**.
-          - Auto-merge was requested via GraphQL (SQUASH). If your repo requires a merge queue, GitHub will **queue** it once checks are green.
-
-          **Tips**
-          - If auto-merge did not enable, verify:
-            1. Settings > General > Pull Requests > **Allow auto-merge** is ON
-            2. main branch rule has **Require status checks** and **Require up-to-date**
-            3. Merge queue is **enabled** (and required if desired)'
-          
-          gh pr comment "$PR_NUMBER" --body "$COMMENT_BODY"
-      - name: Output PR URL
-        run: 'echo "PR: ${{ steps.open_pr.outputs.url }}"'
+          gh pr create --base "${{ inputs.base || 'main' }}" \
+            --head "$BR" \
+            --title "${{ inputs.title }}" \
+            --body  "${{ inputs.body }}"

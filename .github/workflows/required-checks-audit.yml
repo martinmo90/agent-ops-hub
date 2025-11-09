@@ -1,100 +1,78 @@
 name: Required Checks Audit
-run-name: "${{ github.workflow }} — ${{ github.event_name == 'pull_request' && format('#{0}', github.event.pull_request.number) || github.ref_name }}"
 
 on:
-  workflow_dispatch:
-    inputs:
-      base:
-        description: "Branch to audit (leave blank to use repo default)"
-        required: false
-        default: ""
-
-# avoid duplicate runs if someone clicks twice
-concurrency:
-  group: required-checks-audit-${{ github.ref }}
-  cancel-in-progress: true
+  workflow_dispatch: {}
 
 permissions:
   contents: read
-  actions: read
+  pull-requests: read
+  checks: read
+  administration: read   # tolerated; if not granted, workflow stays green & prints 'unknown'
+
+concurrency:
+  group: req-checks-audit-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   audit:
+    name: audit
     runs-on: ubuntu-latest
     steps:
-      - name: Audit required checks vs recent contexts
+      - name: Resolve default branch
+        id: def
         uses: actions/github-script@v7
-        env:
-          BASE: ${{ inputs.base }}
         with:
           script: |
-            const owner = context.repo.owner;
-            const repo  = context.repo.repo;
-
-            // Resolve base branch
-            let base = (process.env.BASE || "").trim();
-            if (!base) {
-              const { data: info } = await github.rest.repos.get({ owner, repo });
-              base = info.default_branch;
-            }
-
-            // Branch protection & required contexts
-            let bp = { protected:false, strict:'unknown', contexts:[] };
+            const { data: repo } = await github.rest.repos.get(context.repo);
+            core.setOutput('default', repo.default_branch || 'main');
+      - name: Read branch protection (tolerant)
+        id: prot
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner, repo = context.repo.repo;
+            const base = "${{ steps.def.outputs.default }}";
+            let required = [], ok = true, note = "";
             try {
               const { data } = await github.request(
-                'GET /repos/{owner}/{repo}/branches/{branch}/protection',
+                "GET /repos/{owner}/{repo}/branches/{branch}/protection",
                 { owner, repo, branch: base }
               );
-              bp.protected = true;
-              bp.strict = data?.required_status_checks?.strict ?? 'unknown';
-              bp.contexts = [...new Set((data?.required_status_checks?.checks || [])
-                               .map(c => c.context).filter(Boolean))];
-            } catch {
-              bp.protected = false; // not configured or no access
+              const checks = data?.required_status_checks?.checks || [];
+              required = checks.map(c => c.context);
+            } catch (e) {
+              ok = true; // do not fail in PRs or if scope missing
+              note = `Protection API not accessible: ${e.status||''} ${e.message||e}`;
             }
-
-            // Build recent “workflow / job” contexts from Actions runs
-            const runs = await github.paginate(
-              github.rest.actions.listWorkflowRunsForRepo,
-              { owner, repo, per_page: 20 }
-            );
-            const contexts = new Set();
-            for (const r of runs) {
-              const jobs = await github.paginate(
-                github.rest.actions.listJobsForWorkflowRun,
-                { owner, repo, run_id: r.id, per_page: 50 }
-              );
-              for (const j of jobs) contexts.add(`${r.name} / ${j.name}`);
-            }
-            const recent = [...contexts].sort();
-
-            // Diff
-            const req = new Set(bp.contexts);
-            const recentSet = new Set(recent);
-            const missingInRecent = bp.contexts.filter(c => !recentSet.has(c)).sort();
-            const notRequired     = recent.filter(c => !req.has(c));
-
-            // Summary
-            let md = `# Required Checks Audit\n\n`;
-            md += `**Base branch:** \`${base}\`\n\n`;
-            if (!bp.protected) {
-              md += `- Branch protection on **${base}**: ❌ not configured\n\n`;
-            } else {
-              md += `- Branch protection on **${base}**: ✅ configured\n`;
-              md += `- Strict up-to-date: \`${bp.strict}\`\n`;
-              md += `- **Required contexts (${bp.contexts.length})**:\n`;
-              md += bp.contexts.length ? bp.contexts.map(c=>`  - \`${c}\``).join('\n') : '  - (none)'; md += '\n\n';
-            }
-
-            md += `## Recent Action contexts (workflow / job)\n`;
-            md += recent.length ? recent.map(c=>`- \`${c}\``).join('\n') : '- (none)'; md += '\n\n';
-
-            md += `## Diff\n`;
-            md += `- **Required but not seen recently** (${missingInRecent.length}):\n`;
-            md += missingInRecent.length ? missingInRecent.map(c=>`  - \`${c}\``).join('\n') : '  - (none)'; md += '\n';
-            md += `- **Seen recently but not required** (${notRequired.length}):\n`;
-            md += notRequired.length ? notRequired.map(c=>`  - \`${c}\``).join('\n') : '  - (none)'; md += '\n';
-
-            md += `\n> Branch Protection must use the **exact** context strings emitted by Actions (usually \`<workflow> / <job>\`).\n`;
-
-            await core.summary.addRaw(md).write();
+            core.setOutput('required', JSON.stringify(required));
+            core.setOutput('note', note);
+      - name: Recommend final required checks
+        id: rec
+        run: |
+          cat > rec.txt <<'TXT'
+          Baseline Guard / verify
+          PR Size Gate / size-gate
+          Branch Protection Scan / scan
+          Conventional Commits / lint
+          Benchmark Zip Exact Check / check
+          Build Base44 UI / build
+          TXT
+          echo "recommended<<EOF" >> $GITHUB_OUTPUT
+          cat rec.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      - name: Write summary
+        run: |
+          echo "### Required Checks Audit" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Default branch:** ${{ steps.def.outputs.default }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Current (from API, if accessible):**" >> $GITHUB_STEP_SUMMARY
+          echo '`${{ steps.prot.outputs.required }}`' >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ steps.prot.outputs.note }}" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "_Note_: ${{ steps.prot.outputs.note }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Recommended (copy into Settings → Branches → Required status checks):**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          while IFS= read -r line; do echo "- \`${line}\`" >> $GITHUB_STEP_SUMMARY; done < rec.txt
