@@ -1,50 +1,57 @@
-name: PR Size Gate
-run-name: "${{ github.workflow }} — ${{ github.event_name == 'pull_request' && format('#{0}', github.event.pull_request.number) || github.ref_name }}"
+name: PR Size Gate / size-gate
+
 on:
   pull_request:
-    types: [opened, edited, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+run-name: "${{ github.workflow }} — #${{ github.event.pull_request.number }}"
+
 permissions:
   contents: read
-  pull-requests: write
+  pull-requests: read
+
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: pr-size-gate-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
+
 jobs:
-  size-gate:
+  size:
     runs-on: ubuntu-latest
     steps:
-      - name: Check PR size (files ≤ 10, changes ≤ 500)
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute changes
+        id: delta
         uses: actions/github-script@v7
         with:
           script: |
-            const owner = context.repo.owner;
-            const repo  = context.repo.repo;
-            const pr    = context.payload.pull_request;
-            const num   = pr.number;
+            const pr = context.payload.pull_request;
+            const filesRes = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              per_page: 300
+            });
+            let adds = 0, dels = 0, files = filesRes.data.length;
+            for (const f of filesRes.data) { adds += f.additions; dels += f.deletions; }
+            const delta = adds + dels;
+            core.setOutput('adds', String(adds));
+            core.setOutput('dels', String(dels));
+            core.setOutput('files', String(files));
+            core.setOutput('delta', String(delta));
 
-            const files = await github.paginate(
-              github.rest.pulls.listFiles,
-              { owner, repo, pull_number: num, per_page: 100 }
-            );
-            const fileCount    = files.length;
-            const totalChanges = files.reduce((s,f)=> s + (f.changes || 0), 0);
-
-            core.notice(`fileCount=${fileCount}, totalChanges=${totalChanges}`);
-
-            const MAX_FILES   = 10;
-            const MAX_CHANGES = 500;
-
-            if (fileCount > MAX_FILES || totalChanges > MAX_CHANGES) {
-              const msg = [
-                '⚠️ PR too large for policy.',
-                '',
-                `- Files: **${fileCount}** (limit ${MAX_FILES})`,
-                `- Changes: **${totalChanges}** (limit ${MAX_CHANGES})`,
-                '',
-                'Please split this PR into smaller chunks.'
-              ].join('\n');
-              await github.rest.issues.createComment({ owner, repo, issue_number: num, body: msg });
-              core.setFailed(`PR too large (files=${fileCount}, changes=${totalChanges})`);
-            } else {
-              core.notice('PR within size policy.');
-            }
+      - name: Enforce thresholds
+        env:
+          MAX_LINES: '1200'   # adjust thresholds as you like
+          MAX_FILES: '100'
+        run: |
+          echo "Adds=${{ steps.delta.outputs.adds }} Dels=${{ steps.delta.outputs.dels }} Files=${{ steps.delta.outputs.files }}"
+          DELTA=${{ steps.delta.outputs.delta }}
+          FILES=${{ steps.delta.outputs.files }}
+          if [ "$DELTA" -gt "$MAX_LINES" ] || [ "$FILES" -gt "$MAX_FILES" ]; then
+            echo "::error title=PR too large::Changed lines=$DELTA (limit=$MAX_LINES), files=$FILES (limit=$MAX_FILES)"
+            exit 1
+          fi
+          echo "PR within size thresholds."

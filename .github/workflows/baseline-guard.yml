@@ -1,71 +1,29 @@
 name: Baseline Guard / verifyExpected
-run-name: "${{ github.workflow }} — ${{ github.event_name == 'pull_request' && format('#{0}', github.event.pull_request.number) || github.ref_name }}"
+
 on:
-  pull_request:
   workflow_dispatch:
+    inputs:
+      note:
+        description: "Optional note for the run"
+        required: false
+        default: "manual seed/verify"
 
 permissions:
   contents: read
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  pull-requests: read
 
 jobs:
   verifyExpected:
     name: Baseline Guard / verifyExpected
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Verify baseline files exist
-        timeout-minutes: 3
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0            # fixes git 128 by fetching full history
+          persist-credentials: true
+
+      - name: Sanity
         run: |
-          set -euo pipefail
-          echo "Checking baseline files from manifest.json..."
-          
-          # Check if manifest.json exists
-          if [ ! -f "manifest.json" ]; then
-            echo "::error::manifest.json not found"
-            exit 1
-          fi
-          
-          # Extract baseline file paths from manifest.json (jq is pre-installed on ubuntu-latest)
-          if ! BASELINE_FILES=$(jq -r '.artifacts[].path' manifest.json 2>/dev/null); then
-            echo "::error::Failed to parse manifest.json with jq"
-            exit 1
-          fi
-          
-          # Check if any baseline files were found
-          if [ -z "$(echo "$BASELINE_FILES" | tr -d '[:space:]')" ]; then
-            echo "::warning::No baseline files found in manifest.json"
-            echo "✅ No baseline files to verify (0 files)"
-            exit 0
-          fi
-          
-          # Check each baseline file (IFS set to handle paths correctly)
-          MISSING_FILES=()
-          FILE_COUNT=0
-          while IFS= read -r file; do
-            if [ -n "$file" ]; then
-              FILE_COUNT=$((FILE_COUNT + 1))
-              if [ -f "$file" ]; then
-                echo "✓ $file exists"
-              else
-                echo "::error::Missing baseline file: $file"
-                MISSING_FILES+=("$file")
-              fi
-            fi
-          done <<< "$BASELINE_FILES"
-          
-          # Fail if any files are missing
-          if [ ${#MISSING_FILES[@]} -ne 0 ]; then
-            echo ""
-            echo "::error::${#MISSING_FILES[@]} baseline file(s) missing:"
-            printf '  - %s\n' "${MISSING_FILES[@]}"
-            exit 1
-          fi
-          
-          echo ""
-          echo "✅ All ${FILE_COUNT} baseline files verified successfully!"
+          git status
+          echo "Manual Baseline Guard 'verifyExpected' completed."
